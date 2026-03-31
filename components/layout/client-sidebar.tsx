@@ -24,10 +24,8 @@ import {
   TrendingUp,
   DollarSign,
   CreditCard,
-  PieChart,
   Download,
   CheckCircle,
-  AlertCircle,
 } from "lucide-react";
 import { useSidebar } from "./sidebar-provider";
 
@@ -106,12 +104,6 @@ const CLIENT_NAV: NavSection[] = [
         label: "Compliance Passport",
         href: "/client/compliance",
         icon: <ShieldCheck size={18} />,
-        subItems: [
-          { label: "Compliance Score",    href: "/client/compliance",              icon: <PieChart size={14} /> },
-          { label: "Verification Status", href: "/client/compliance/verification", icon: <CheckCircle size={14} /> },
-          { label: "Missing Documents",   href: "/client/compliance/documents",    icon: <AlertCircle size={14} />, badge: "!", badgeColor: BRAND.gold },
-          { label: "Download Passport",   href: "/client/compliance/download",     icon: <Download size={14} /> },
-        ],
       },
       {
         id: "funding",
