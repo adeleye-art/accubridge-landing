@@ -10,7 +10,7 @@ export default function AdminDashboard() {
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
           {[
-            { label: "Total Clients",        value: "0", icon: "🏢", color: "text-[#3E92CC]" },
+            { label: "Total ",        value: "0", icon: "🏢", color: "text-[#3E92CC]" },
             { label: "Active Onboardings",   value: "0", icon: "📋", color: "text-[#D4AF37]" },
             { label: "Compliance Alerts",    value: "0", icon: "⚠️", color: "text-red-400"   },
             { label: "Funding Applications", value: "0", icon: "💰", color: "text-[#06D6A0]" },
