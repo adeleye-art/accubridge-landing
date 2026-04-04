@@ -10,12 +10,9 @@ import { calculatePnL } from "@/lib/reports/report-calculations";
 import { exportPnLToPDF } from "@/lib/reports/generate-pdf";
 import { exportPnLToCSV, exportPnLToXLSX } from "@/lib/reports/generate-excel";
 import type { ReportDateRange } from "@/types/reports";
+import { useCurrency } from "@/lib/currency-context";
 
 const BRAND = { green: "#06D6A0", gold: "#D4AF37", muted: "#6B7280" };
-
-function fmt(v: number) {
-  return `£${Math.abs(v).toLocaleString("en-GB", { minimumFractionDigits: 2 })}`;
-}
 
 function buildPnLRows(report: ReturnType<typeof calculatePnL>): ReportRow[] {
   const isProfit = report.net_profit >= 0;
@@ -40,6 +37,8 @@ function buildPnLRows(report: ReturnType<typeof calculatePnL>): ReportRow[] {
 }
 
 export default function ProfitLossPage() {
+  const { currency, fmt } = useCurrency();
+
   return (
     <ReportPageShell
       label="Reports"
@@ -47,7 +46,7 @@ export default function ProfitLossPage() {
       subtitle="Income vs expenses — see exactly what your business earned and spent over a period"
       downloadLabel="Download P&L"
       reviewedBy="Sarah Merchant, ACCA"
-      onDownloadPDF={(range) => exportPnLToPDF(calculatePnL(range), `pnl-${range.from}-to-${range.to}.pdf`)}
+      onDownloadPDF={(range) => exportPnLToPDF(calculatePnL(range), `pnl-${range.from}-to-${range.to}.pdf`, currency)}
       onDownloadCSV={(range) => exportPnLToCSV(calculatePnL(range), `pnl-${range.from}-to-${range.to}.csv`)}
       onDownloadXLSX={(range) => exportPnLToXLSX(calculatePnL(range), `pnl-${range.from}-to-${range.to}.xlsx`)}
     >
@@ -65,7 +64,7 @@ export default function ProfitLossPage() {
                 { label: "Net Margin",        value: `${report.net_margin_percent}%`, color: BRAND.gold,                       icon: <Percent size={16} />      },
               ]}
             />
-            <ReportTable rows={buildPnLRows(report)} />
+            <ReportTable rows={buildPnLRows(report)} currency={currency} />
             <p className="text-xs text-center" style={{ color: BRAND.muted }}>
               Period: {report.period_label}
               {report.reviewed_by && ` · Reviewed by ${report.reviewed_by}`}

@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { Check, ChevronRight } from "lucide-react";
 import { SystemSheet } from "@/components/shared/system-sheet";
+import { useCurrency } from "@/lib/currency-context";
 import {
   RegistrationCountry,
   UKRegistrationData,
@@ -536,6 +537,7 @@ function UKStep3({
   onNext: () => void;
   onBack: () => void;
 }) {
+  const { symbol } = useCurrency();
   const [errors, setErrors] = useState<Record<string, string>>({});
   const set = (k: keyof UKRegistrationData) => (e: React.ChangeEvent<HTMLInputElement>) =>
     onChange({ ...data, [k]: e.target.value });
@@ -589,7 +591,7 @@ function UKStep3({
         Share Capital
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <FField label="Share Capital (£)">
+        <FField label={`Share Capital (${symbol})`}>
           <FInput
             type="number"
             placeholder="100"
@@ -624,6 +626,7 @@ function UKStep4({
   onBack: () => void;
   isSubmitting: boolean;
 }) {
+  const { symbol } = useCurrency();
   return (
     <div className="flex flex-col gap-5">
       <MiniStepIndicator steps={UK_STEPS} current={3} />
@@ -675,7 +678,7 @@ function UKStep4({
         }}
       >
         🏛️ Companies House filing fee:{" "}
-        <strong style={{ color: BRAND.gold }}>£50</strong> (standard online) ·
+        <strong style={{ color: BRAND.gold }}>{symbol}50</strong> (standard online) ·
         Processed within 24 hours · Certificate of Incorporation issued digitally
       </div>
       <StepNav isLast onBack={onBack} onNext={onSubmit} isLoading={isSubmitting} />

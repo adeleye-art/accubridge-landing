@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useCurrency } from "@/lib/currency-context";
 import {
   Plus,
   CheckCircle2,
@@ -106,9 +107,7 @@ const MOCK_RUNS: ReconciliationRun[] = [
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function fmtAmount(n: number) {
-  return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", minimumFractionDigits: 2 }).format(n);
-}
+// fmtAmount is provided via useCurrency() inside the component
 
 // ─── Status badge ──────────────────────────────────────────────────────────────
 
@@ -195,6 +194,7 @@ function SummaryStats({ runs }: { runs: ReconciliationRun[] }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ReconciliationHistoryPage() {
+  const { fmt: fmtAmount } = useCurrency();
   const router = useRouter();
   const [runs] = useState<ReconciliationRun[]>(MOCK_RUNS);
 

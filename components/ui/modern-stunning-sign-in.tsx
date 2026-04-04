@@ -14,23 +14,28 @@ const SignIn = () => {
 
   const validateEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
+  const DEMO_ACCOUNTS: Record<string, { password: string; role: string; country: string; dest: string }> = {
+    "admin@accubridge.com":    { password: "admin123",  role: "admin",  country: "both",    dest: "/admin/dashboard"  },
+    "staff@accubridge.com":    { password: "staff123",  role: "staff",  country: "both",    dest: "/staff/dashboard"  },
+    "client@accubridge.com":   { password: "client123", role: "client", country: "uk",      dest: "/client/dashboard" },
+    "client.ng@accubridge.com":{ password: "client123", role: "client", country: "nigeria", dest: "/client/dashboard" },
+  };
+
   const handleSignIn = async () => {
     if (!email || !password) { setError("Please enter both email and password."); return; }
     if (!validateEmail(email)) { setError("Please enter a valid email address."); return; }
     setError("");
     setLoading(true);
-    try {
-      // TODO: replace with real auth
-      // const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      await new Promise((res) => setTimeout(res, 1200)); // MOCK — remove in production
-      // Always go to onboarding — it will skip straight to the dashboard
-      // if the user has already completed the onboarding wizard.
-      router.push("/onboarding");
-    } catch {
+    await new Promise((res) => setTimeout(res, 800));
+    const account = DEMO_ACCOUNTS[email.toLowerCase()];
+    if (account && account.password === password) {
+      document.cookie = `accubridge_role=${account.role}; path=/; max-age=86400`;
+      document.cookie = `accubridge_country=${account.country}; path=/; max-age=86400`;
+      router.push(account.dest);
+    } else {
       setError("Invalid email or password. Please try again.");
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   };
 
   return (
@@ -130,8 +135,29 @@ const SignIn = () => {
         </div>
       </div>
 
+      {/* Demo credentials */}
+      <div className="relative z-10 mt-6 w-full max-w-sm rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-4 text-xs text-[#6B7280]">
+        <p className="font-semibold text-white/50 mb-2 uppercase tracking-wide text-[10px]">Demo credentials</p>
+        <div className="flex flex-col gap-1.5">
+          {[
+            { label: "Admin",      email: "admin@accubridge.com",    pw: "admin123",  color: "#D4AF37" },
+            { label: "Staff",      email: "staff@accubridge.com",    pw: "staff123",  color: "#3E92CC" },
+            { label: "Client (UK)",email: "client@accubridge.com",   pw: "client123", color: "#06D6A0" },
+            { label: "Client (NG)",email: "client.ng@accubridge.com",pw: "client123", color: "#F4A261" },
+          ].map((a) => (
+            <button key={a.label} type="button"
+              onClick={() => { setEmail(a.email); setPassword(a.pw); setError(""); }}
+              className="flex items-center justify-between w-full hover:bg-white/5 rounded-lg px-2 py-1 transition text-left">
+              <span className="font-medium" style={{ color: a.color }}>{a.label}</span>
+              <span>{a.email}</span>
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-[10px] text-white/20">Click a row to autofill, then press Sign in.</p>
+      </div>
+
       {/* Social proof */}
-      <div className="relative z-10 mt-10 flex flex-col items-center text-center">
+      <div className="relative z-10 mt-6 flex flex-col items-center text-center">
         <p className="text-[#6B7280] text-xs mb-3">
           Trusted by <span className="text-white font-semibold">500+ SMEs</span> across the UK &amp; Nigeria
         </p>

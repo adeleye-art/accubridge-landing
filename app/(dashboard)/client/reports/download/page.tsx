@@ -9,6 +9,7 @@ import type { ReportPeriod, ReportDateRange } from "@/types/reports";
 import { getPeriodRange, calculatePnL, calculateBalanceSheet, calculateCashFlow } from "@/lib/reports/report-calculations";
 import { exportPnLToPDF, exportBalanceSheetToPDF, exportCashFlowToPDF } from "@/lib/reports/generate-pdf";
 import { exportPnLToCSV, exportPnLToXLSX, exportBalanceSheetToCSV, exportBalanceSheetToXLSX, exportCashFlowToCSV, exportCashFlowToXLSX } from "@/lib/reports/generate-excel";
+import { useCurrency } from "@/lib/currency-context";
 
 const BRAND = { gold: "#D4AF37", green: "#06D6A0", accent: "#3E92CC", muted: "#6B7280", primary: "#0A2463" };
 
@@ -29,29 +30,8 @@ const REPORT_ITEMS = [
   { id: "cashflow", label: "Cash Flow Statement",  href: "/client/reports/cashflow" },
 ];
 
-async function runDownload(reportId: string, format: DownloadFormat, range: ReportDateRange) {
-  const suffix = `${range.from}-to-${range.to}`;
-  if (reportId === "pnl") {
-    const r = calculatePnL(range);
-    if (format === "pdf")  return exportPnLToPDF(r,  `pnl-${suffix}.pdf`);
-    if (format === "csv")  return exportPnLToCSV(r,  `pnl-${suffix}.csv`);
-    if (format === "xlsx") return exportPnLToXLSX(r, `pnl-${suffix}.xlsx`);
-  }
-  if (reportId === "balance") {
-    const r = calculateBalanceSheet(range.to);
-    if (format === "pdf")  return exportBalanceSheetToPDF(r,  `balance-sheet-${range.to}.pdf`);
-    if (format === "csv")  return exportBalanceSheetToCSV(r,  `balance-sheet-${range.to}.csv`);
-    if (format === "xlsx") return exportBalanceSheetToXLSX(r, `balance-sheet-${range.to}.xlsx`);
-  }
-  if (reportId === "cashflow") {
-    const r = calculateCashFlow(range);
-    if (format === "pdf")  return exportCashFlowToPDF(r,  `cash-flow-${suffix}.pdf`);
-    if (format === "csv")  return exportCashFlowToCSV(r,  `cash-flow-${suffix}.csv`);
-    if (format === "xlsx") return exportCashFlowToXLSX(r, `cash-flow-${suffix}.xlsx`);
-  }
-}
-
 export default function DownloadReportsPage() {
+  const { currency } = useCurrency();
   const [period, setPeriod]           = useState<ReportPeriod>("this_month");
   const [customRange, setCustomRange] = useState<ReportDateRange>({
     from: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0],
@@ -62,6 +42,28 @@ export default function DownloadReportsPage() {
 
   const getRange = (): ReportDateRange =>
     period === "custom" ? customRange : getPeriodRange(period);
+
+  const runDownload = async (reportId: string, format: DownloadFormat, range: ReportDateRange) => {
+    const suffix = `${range.from}-to-${range.to}`;
+    if (reportId === "pnl") {
+      const r = calculatePnL(range);
+      if (format === "pdf")  return exportPnLToPDF(r,  `pnl-${suffix}.pdf`, currency);
+      if (format === "csv")  return exportPnLToCSV(r,  `pnl-${suffix}.csv`);
+      if (format === "xlsx") return exportPnLToXLSX(r, `pnl-${suffix}.xlsx`);
+    }
+    if (reportId === "balance") {
+      const r = calculateBalanceSheet(range.to);
+      if (format === "pdf")  return exportBalanceSheetToPDF(r,  `balance-sheet-${range.to}.pdf`, currency);
+      if (format === "csv")  return exportBalanceSheetToCSV(r,  `balance-sheet-${range.to}.csv`);
+      if (format === "xlsx") return exportBalanceSheetToXLSX(r, `balance-sheet-${range.to}.xlsx`);
+    }
+    if (reportId === "cashflow") {
+      const r = calculateCashFlow(range);
+      if (format === "pdf")  return exportCashFlowToPDF(r,  `cash-flow-${suffix}.pdf`, currency);
+      if (format === "csv")  return exportCashFlowToCSV(r,  `cash-flow-${suffix}.csv`);
+      if (format === "xlsx") return exportCashFlowToXLSX(r, `cash-flow-${suffix}.xlsx`);
+    }
+  };
 
   const handleDownload = async (reportId: string, format: DownloadFormat) => {
     const key = `${reportId}-${format}`;

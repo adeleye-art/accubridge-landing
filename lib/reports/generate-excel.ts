@@ -1,9 +1,5 @@
 import type { PnLReport, BalanceSheetReport, CashFlowReport, LineItem } from "@/types/reports";
 
-function gbp(v: number): string {
-  return Math.abs(v).toLocaleString("en-GB", { minimumFractionDigits: 2 });
-}
-
 type SheetRow = (string | number)[];
 
 /* ── Download helpers ── */

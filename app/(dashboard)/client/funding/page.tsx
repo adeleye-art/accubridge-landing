@@ -4,41 +4,46 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { Ticket, ShieldCheck, TrendingUp, ArrowRight } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
+import { useCurrency } from "@/lib/currency-context";
 
 const BRAND = { gold: "#D4AF37", green: "#06D6A0", accent: "#3E92CC", muted: "#6B7280" };
 
-const FUNDING_CARDS = [
-  {
-    href:        "/client/funding/raffle",
-    icon:        <Ticket size={22} />,
-    title:       "Raffle Funding",
-    description: "Enter for a chance to win business funding. Pay a small entry fee, receive a unique raffle ID and number. Draws happen quarterly.",
-    color:       BRAND.gold,
-    cta:         "Enter a draw",
-    features:    ["£25 entry fee", "Quarterly draws", "Unique raffle ID", "Random selection"],
-  },
-  {
-    href:        "/client/funding/compliance",
-    icon:        <ShieldCheck size={22} />,
-    title:       "Compliance Grants",
-    description: "Qualify by maintaining a strong compliance score over 12+ months. Grants are awarded based on consistent platform activity.",
-    color:       BRAND.green,
-    cta:         "Check eligibility",
-    features:    ["Score 70+ required", "12+ months active", "Grant up to £10,000", "Admin reviewed"],
-  },
-  {
-    href:        "/client/funding/investor",
-    icon:        <TrendingUp size={22} />,
-    title:       "Investor Pitch",
-    description: "Upload your pitch deck for review by the AccuBridge team. Approved pitches gain access to our investor network for seed and growth funding.",
-    color:       BRAND.accent,
-    cta:         "Upload pitch deck",
-    features:    ["Pitch deck upload", "Admin review", "Investor network access", "Seed & growth rounds"],
-  },
-];
+function getFundingCards(symbol: string) {
+  return [
+    {
+      href:        "/client/funding/raffle",
+      icon:        <Ticket size={22} />,
+      title:       "Raffle Funding",
+      description: "Enter for a chance to win business funding. Pay a small entry fee, receive a unique raffle ID and number. Draws happen quarterly.",
+      color:       BRAND.gold,
+      cta:         "Enter a draw",
+      features:    [`${symbol}25 entry fee`, "Quarterly draws", "Unique raffle ID", "Random selection"],
+    },
+    {
+      href:        "/client/funding/compliance",
+      icon:        <ShieldCheck size={22} />,
+      title:       "Compliance Grants",
+      description: "Qualify by maintaining a strong compliance score over 12+ months. Grants are awarded based on consistent platform activity.",
+      color:       BRAND.green,
+      cta:         "Check eligibility",
+      features:    ["Score 70+ required", "12+ months active", `Grant up to ${symbol}10,000`, "Admin reviewed"],
+    },
+    {
+      href:        "/client/funding/investor",
+      icon:        <TrendingUp size={22} />,
+      title:       "Investor Pitch",
+      description: "Upload your pitch deck for review by the AccuBridge team. Approved pitches gain access to our investor network for seed and growth funding.",
+      color:       BRAND.accent,
+      cta:         "Upload pitch deck",
+      features:    ["Pitch deck upload", "Admin review", "Investor network access", "Seed & growth rounds"],
+    },
+  ];
+}
 
 export default function FundingPage() {
   const router = useRouter();
+  const { symbol } = useCurrency();
+  const FUNDING_CARDS = getFundingCards(symbol);
 
   return (
     <div className="p-5 md:p-8 text-white">

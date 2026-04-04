@@ -20,6 +20,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useToast } from "@/components/shared/toast";
 import { AddTransactionSheet, type TransactionFormData } from "./_components/add-transaction-sheet";
+import { useCurrency } from "@/lib/currency-context";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -57,10 +58,6 @@ const SEED: Transaction[] = [
 const PAGE_SIZE = 8;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function fmtAmount(n: number) {
-  return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", minimumFractionDigits: 2 }).format(n);
-}
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" });
@@ -100,6 +97,7 @@ function SortIcon({ field, active, dir }: { field: SortField; active: SortField;
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function TransactionsPage() {
+  const { fmt } = useCurrency();
   const { toast } = useToast();
 
   // ── Data state
@@ -188,7 +186,7 @@ export default function TransactionsPage() {
         reference: data.reference,
       };
       setTxns((prev) => [newTx, ...prev]);
-      toast({ variant: "success", title: "Transaction added", description: `${data.type}: ${fmtAmount(amount)}` });
+      toast({ variant: "success", title: "Transaction added", description: `${data.type}: ${fmt(amount)}` });
     } else if (editTarget) {
       setTxns((prev) =>
         prev.map((t) =>
@@ -282,7 +280,7 @@ export default function TransactionsPage() {
               </div>
               <span style={{ color: "#6B7280", fontSize: "12px", fontWeight: 600 }}>Total Income</span>
             </div>
-            <div style={{ color: "#06D6A0", fontSize: "22px", fontWeight: 700 }}>{fmtAmount(totalIncome)}</div>
+            <div style={{ color: "#06D6A0", fontSize: "22px", fontWeight: 700 }}>{fmt(totalIncome)}</div>
           </div>
           {/* Expenses */}
           <div style={cardStyle}>
@@ -292,7 +290,7 @@ export default function TransactionsPage() {
               </div>
               <span style={{ color: "#6B7280", fontSize: "12px", fontWeight: 600 }}>Total Expenses</span>
             </div>
-            <div style={{ color: "#ef4444", fontSize: "22px", fontWeight: 700 }}>{fmtAmount(totalExpense)}</div>
+            <div style={{ color: "#ef4444", fontSize: "22px", fontWeight: 700 }}>{fmt(totalExpense)}</div>
           </div>
           {/* Net */}
           <div style={cardStyle}>
@@ -303,7 +301,7 @@ export default function TransactionsPage() {
               <span style={{ color: "#6B7280", fontSize: "12px", fontWeight: 600 }}>Net Profit</span>
             </div>
             <div style={{ color: netProfit >= 0 ? "#06D6A0" : "#ef4444", fontSize: "22px", fontWeight: 700 }}>
-              {fmtAmount(netProfit)}
+              {fmt(netProfit)}
             </div>
           </div>
         </div>
@@ -420,7 +418,7 @@ export default function TransactionsPage() {
 
                 {/* Amount */}
                 <span style={{ color: tx.type === "Income" ? "#06D6A0" : "#ef4444", fontWeight: 700, fontSize: "14px", textAlign: "right" }}>
-                  {tx.type === "Income" ? "+" : "-"}{fmtAmount(tx.amount)}
+                  {tx.type === "Income" ? "+" : "-"}{fmt(tx.amount)}
                 </span>
 
                 {/* Actions */}
@@ -557,7 +555,7 @@ export default function TransactionsPage() {
         title="Delete Transaction"
         description={
           deleteTarget
-            ? `Are you sure you want to delete "${deleteTarget.category}" (${fmtAmount(deleteTarget.amount)})? This action cannot be undone.`
+            ? `Are you sure you want to delete "${deleteTarget.category}" (${fmt(deleteTarget.amount)})? This action cannot be undone.`
             : ""
         }
         confirmLabel="Delete"

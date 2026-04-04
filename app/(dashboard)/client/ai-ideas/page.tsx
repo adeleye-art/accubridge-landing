@@ -6,6 +6,8 @@ import { PageHeader } from "@/components/shared/page-header";
 import { IdeaInputForm } from "./_components/idea-input-form";
 import { IdeaCard } from "./_components/idea-card";
 import { AIIdeaInput, AIBusinessIdea } from "@/types/tools";
+import { useCurrency } from "@/lib/currency-context";
+import type { SupportedCurrency } from "@/lib/currency";
 
 const BRAND = {
   primary: "#0A2463",
@@ -16,7 +18,7 @@ const BRAND = {
 };
 
 // ── Mock generator (replace with real Anthropic API call in production) ────────
-async function generateIdeas(input: AIIdeaInput): Promise<AIBusinessIdea[]> {
+async function generateIdeas(input: AIIdeaInput, currency: SupportedCurrency): Promise<AIBusinessIdea[]> {
   await new Promise((res) => setTimeout(res, 2500));
 
   return [
@@ -26,7 +28,7 @@ async function generateIdeas(input: AIIdeaInput): Promise<AIBusinessIdea[]> {
       tagline: "Full-service digital growth for small businesses in your region",
       description: `Leveraging your ${input.skills} background, you can offer social media management, SEO, and paid advertising specifically to the underserved SME market in ${input.location}. Low overhead, high demand.`,
       business_model: "B2B",
-      startup_cost_estimate: input.capital.includes("£")
+      startup_cost_estimate: currency === "GBP"
         ? "£1,500 – £4,000"
         : "₦150,000 – ₦400,000",
       revenue_potential: "High",
@@ -53,7 +55,7 @@ async function generateIdeas(input: AIIdeaInput): Promise<AIBusinessIdea[]> {
       tagline: "Connect students with qualified tutors in your area",
       description: `With your experience in ${input.experience || "your field"}, you can build or join a tutoring platform serving students in ${input.location}. High demand for quality education support, especially post-COVID.`,
       business_model: "Marketplace",
-      startup_cost_estimate: input.capital.includes("£")
+      startup_cost_estimate: currency === "GBP"
         ? "£500 – £3,000"
         : "₦50,000 – ₦300,000",
       revenue_potential: "Medium",
@@ -80,7 +82,7 @@ async function generateIdeas(input: AIIdeaInput): Promise<AIBusinessIdea[]> {
       tagline: "Affordable financial compliance for local businesses",
       description: `A bookkeeping and tax support service targeted at small businesses and freelancers in ${input.location}. With AccuBridge as your operational backbone, overhead is minimal and recurring revenue is predictable.`,
       business_model: "Service",
-      startup_cost_estimate: input.capital.includes("£")
+      startup_cost_estimate: currency === "GBP"
         ? "£800 – £2,500"
         : "₦80,000 – ₦250,000",
       revenue_potential: "Medium",
@@ -105,6 +107,7 @@ async function generateIdeas(input: AIIdeaInput): Promise<AIBusinessIdea[]> {
 }
 
 export default function AIIdeasPage() {
+  const { currency } = useCurrency();
   const [ideas, setIdeas] = useState<AIBusinessIdea[]>([]);
   const [isGenerating, setGenerating] = useState(false);
   const [hasGenerated, setHasGenerated] = useState(false);
@@ -114,7 +117,7 @@ export default function AIIdeasPage() {
     setGenerating(true);
     setIdeas([]);
     try {
-      const results = await generateIdeas(input);
+      const results = await generateIdeas(input, currency);
       setIdeas(results);
       setHasGenerated(true);
     } finally {

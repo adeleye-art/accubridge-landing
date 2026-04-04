@@ -3,6 +3,8 @@
 import React from "react";
 import { CheckCircle2, ArrowUpRight, Calendar, CreditCard } from "lucide-react";
 import { SubscriptionInfo } from "@/types/settings";
+import { useCurrency } from "@/lib/currency-context";
+import { PLAN_PRICES } from "@/lib/currency";
 
 const BRAND = {
   primary: "#0A2463",
@@ -15,7 +17,6 @@ const BRAND = {
 const PLAN_CONFIG = {
   basic: {
     label: "Basic",
-    price: "£29/mo",
     color: "rgba(255,255,255,0.6)",
     bg: "rgba(255,255,255,0.08)",
     border: "rgba(255,255,255,0.15)",
@@ -28,7 +29,6 @@ const PLAN_CONFIG = {
   },
   standard: {
     label: "Standard",
-    price: "£69/mo",
     color: BRAND.gold,
     bg: `${BRAND.gold}15`,
     border: `${BRAND.gold}30`,
@@ -42,7 +42,6 @@ const PLAN_CONFIG = {
   },
   premium: {
     label: "Premium",
-    price: "£129/mo",
     color: BRAND.accent,
     bg: `${BRAND.accent}15`,
     border: `${BRAND.accent}30`,
@@ -61,6 +60,7 @@ interface SubscriptionSectionProps {
 }
 
 export function SubscriptionSection({ subscription }: SubscriptionSectionProps) {
+  const { currency, fmt } = useCurrency();
   const plan = PLAN_CONFIG[subscription.plan];
   const planOrder = { basic: 0, standard: 1, premium: 2 };
 
@@ -100,7 +100,7 @@ export function SubscriptionSection({ subscription }: SubscriptionSectionProps) 
               )}
             </div>
             <div className="text-3xl font-bold" style={{ color: plan.color }}>
-              {plan.price}
+              {fmt(PLAN_PRICES[currency][subscription.plan])}/mo
             </div>
             <p
               className="text-xs mt-1"
@@ -204,7 +204,7 @@ export function SubscriptionSection({ subscription }: SubscriptionSectionProps) 
                       className="text-sm font-bold"
                       style={{ color: config.color }}
                     >
-                      {config.price}
+                      {fmt(PLAN_PRICES[currency][key])}/mo
                     </span>
                   </div>
                   <button

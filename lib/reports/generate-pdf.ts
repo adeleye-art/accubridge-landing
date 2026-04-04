@@ -1,4 +1,5 @@
 import type { PnLReport, BalanceSheetReport, CashFlowReport, LineItem } from "@/types/reports";
+import { type SupportedCurrency, CURRENCY_CONFIG, formatAmountRaw } from "@/lib/currency";
 
 const PRIMARY  = "#0A2463";
 const GOLD     = "#D4AF37";
@@ -8,9 +9,8 @@ const MUTED    = "#6B7280";
 
 /* ── Helpers ── */
 
-function gbp(v: number): string {
-  const abs = Math.abs(v).toLocaleString("en-GB", { minimumFractionDigits: 2 });
-  return v < 0 ? `(£${abs})` : `£${abs}`;
+function cur(v: number, currency: SupportedCurrency): string {
+  return formatAmountRaw(v, currency, { parens: true });
 }
 
 async function getJsPDF() {
@@ -69,7 +69,7 @@ function addFooter(doc: InstanceType<typeof import("jspdf").default>, reviewedBy
 
 /* ── P&L PDF ── */
 
-export async function exportPnLToPDF(report: PnLReport, filename: string): Promise<void> {
+export async function exportPnLToPDF(report: PnLReport, filename: string, currency: SupportedCurrency = "GBP"): Promise<void> {
   const { jsPDF, autoTable } = await getJsPDF();
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
 
@@ -78,20 +78,20 @@ export async function exportPnLToPDF(report: PnLReport, filename: string): Promi
   const rows: [string, string][] = [];
 
   rows.push(["INCOME", ""] as unknown as [string, string]);
-  report.income.items.forEach((i) => rows.push([`  ${i.label}`, gbp(i.amount)]));
-  rows.push([report.income.totalLabel, gbp(report.income.total)]);
+  report.income.items.forEach((i) => rows.push([`  ${i.label}`, cur(i.amount, currency)]));
+  rows.push([report.income.totalLabel, cur(report.income.total, currency)]);
   rows.push(["", ""]);
 
   rows.push(["EXPENSES", ""] as unknown as [string, string]);
-  report.expenses.items.forEach((i) => rows.push([`  ${i.label}`, gbp(i.amount)]));
-  rows.push([report.expenses.totalLabel, gbp(report.expenses.total)]);
+  report.expenses.items.forEach((i) => rows.push([`  ${i.label}`, cur(i.amount, currency)]));
+  rows.push([report.expenses.totalLabel, cur(report.expenses.total, currency)]);
   rows.push(["", ""]);
 
-  rows.push(["NET PROFIT / (LOSS)", gbp(report.net_profit)]);
+  rows.push(["NET PROFIT / (LOSS)", cur(report.net_profit, currency)]);
 
   autoTable(doc, {
     startY: 36,
-    head: [["Description", "Amount (£)"]],
+    head: [["Description", `Amount (${CURRENCY_CONFIG[currency].symbol})`]],
     body: rows,
     theme: "plain",
     styles: { font: "helvetica", fontSize: 9, cellPadding: { top: 2.5, bottom: 2.5, left: 4, right: 4 }, textColor: [30, 30, 40] },
@@ -124,7 +124,7 @@ export async function exportPnLToPDF(report: PnLReport, filename: string): Promi
 
 /* ── Balance Sheet PDF ── */
 
-export async function exportBalanceSheetToPDF(report: BalanceSheetReport, filename: string): Promise<void> {
+export async function exportBalanceSheetToPDF(report: BalanceSheetReport, filename: string, currency: SupportedCurrency = "GBP"): Promise<void> {
   const { jsPDF, autoTable } = await getJsPDF();
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
 
@@ -134,8 +134,8 @@ export async function exportBalanceSheetToPDF(report: BalanceSheetReport, filena
   const rows: Row[] = [];
 
   const addGroup = (items: LineItem[], totalLabel: string, total: number) => {
-    items.forEach((i) => rows.push([`  ${i.label}`, gbp(i.amount)]));
-    rows.push([totalLabel, gbp(total)]);
+    items.forEach((i) => rows.push([`  ${i.label}`, cur(i.amount, currency)]));
+    rows.push([totalLabel, cur(total, currency)]);
     rows.push(["", ""]);
   };
 
@@ -144,7 +144,7 @@ export async function exportBalanceSheetToPDF(report: BalanceSheetReport, filena
   addGroup(report.assets.current.items, report.assets.current.totalLabel, report.assets.current.total);
   rows.push([report.assets.non_current.title, ""]);
   addGroup(report.assets.non_current.items, report.assets.non_current.totalLabel, report.assets.non_current.total);
-  rows.push(["TOTAL ASSETS", gbp(report.assets.total_assets)]);
+  rows.push(["TOTAL ASSETS", cur(report.assets.total_assets, currency)]);
   rows.push(["", ""]);
 
   rows.push(["LIABILITIES", ""]);
@@ -152,19 +152,19 @@ export async function exportBalanceSheetToPDF(report: BalanceSheetReport, filena
   addGroup(report.liabilities.current.items, report.liabilities.current.totalLabel, report.liabilities.current.total);
   rows.push([report.liabilities.non_current.title, ""]);
   addGroup(report.liabilities.non_current.items, report.liabilities.non_current.totalLabel, report.liabilities.non_current.total);
-  rows.push(["TOTAL LIABILITIES", gbp(report.liabilities.total_liabilities)]);
+  rows.push(["TOTAL LIABILITIES", cur(report.liabilities.total_liabilities, currency)]);
   rows.push(["", ""]);
 
   rows.push(["EQUITY", ""]);
-  report.equity.items.forEach((i) => rows.push([`  ${i.label}`, gbp(i.amount)]));
-  rows.push(["TOTAL EQUITY", gbp(report.equity.total_equity)]);
+  report.equity.items.forEach((i) => rows.push([`  ${i.label}`, cur(i.amount, currency)]));
+  rows.push(["TOTAL EQUITY", cur(report.equity.total_equity, currency)]);
   rows.push(["", ""]);
 
-  rows.push(["TOTAL LIABILITIES & EQUITY", gbp(report.total_liabilities_and_equity)]);
+  rows.push(["TOTAL LIABILITIES & EQUITY", cur(report.total_liabilities_and_equity, currency)]);
 
   autoTable(doc, {
     startY: 36,
-    head: [["Description", "Amount (£)"]],
+    head: [["Description", `Amount (${CURRENCY_CONFIG[currency].symbol})`]],
     body: rows,
     theme: "plain",
     styles: { font: "helvetica", fontSize: 9, cellPadding: { top: 2.5, bottom: 2.5, left: 4, right: 4 }, textColor: [30, 30, 40] },
@@ -196,7 +196,7 @@ export async function exportBalanceSheetToPDF(report: BalanceSheetReport, filena
 
 /* ── Cash Flow PDF ── */
 
-export async function exportCashFlowToPDF(report: CashFlowReport, filename: string): Promise<void> {
+export async function exportCashFlowToPDF(report: CashFlowReport, filename: string, currency: SupportedCurrency = "GBP"): Promise<void> {
   const { jsPDF, autoTable } = await getJsPDF();
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
 
@@ -205,13 +205,13 @@ export async function exportCashFlowToPDF(report: CashFlowReport, filename: stri
   type Row = [string, string];
   const rows: Row[] = [];
 
-  rows.push(["Opening Cash Balance", gbp(report.opening_balance)]);
+  rows.push(["Opening Cash Balance", cur(report.opening_balance, currency)]);
   rows.push(["", ""]);
 
   const addSection = (title: string, items: LineItem[], totalLabel: string, total: number) => {
     rows.push([title, ""]);
-    items.forEach((i) => rows.push([`  ${i.label}`, gbp(i.amount)]));
-    rows.push([totalLabel, gbp(total)]);
+    items.forEach((i) => rows.push([`  ${i.label}`, cur(i.amount, currency)]));
+    rows.push([totalLabel, cur(total, currency)]);
     rows.push(["", ""]);
   };
 
@@ -219,12 +219,12 @@ export async function exportCashFlowToPDF(report: CashFlowReport, filename: stri
   addSection("INVESTING ACTIVITIES", report.investing.items, report.investing.totalLabel, report.investing.total);
   addSection("FINANCING ACTIVITIES", report.financing.items, report.financing.totalLabel, report.financing.total);
 
-  rows.push(["NET CHANGE IN CASH", gbp(report.net_change)]);
-  rows.push(["CLOSING CASH BALANCE", gbp(report.closing_balance)]);
+  rows.push(["NET CHANGE IN CASH", cur(report.net_change, currency)]);
+  rows.push(["CLOSING CASH BALANCE", cur(report.closing_balance, currency)]);
 
   autoTable(doc, {
     startY: 36,
-    head: [["Description", "Amount (£)"]],
+    head: [["Description", `Amount (${CURRENCY_CONFIG[currency].symbol})`]],
     body: rows,
     theme: "plain",
     styles: { font: "helvetica", fontSize: 9, cellPadding: { top: 2.5, bottom: 2.5, left: 4, right: 4 }, textColor: [30, 30, 40] },

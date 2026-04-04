@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { type SupportedCurrency, CURRENCY_CONFIG, formatAmountRaw } from "@/lib/currency";
 
 const BRAND = { primary: "#0A2463", gold: "#D4AF37", accent: "#3E92CC", muted: "#6B7280" };
 
@@ -16,12 +17,7 @@ export interface ReportRow {
   noBorder?: boolean;
 }
 
-function fmt(v: number): string {
-  const abs = Math.abs(v).toLocaleString("en-GB", { minimumFractionDigits: 2 });
-  return v < 0 ? `(£${abs})` : `£${abs}`;
-}
-
-function Row({ row }: { row: ReportRow }) {
+function Row({ row, fmt }: { row: ReportRow; fmt: (v: number) => string }) {
   if (!row.label && row.noBorder) {
     return <tr><td colSpan={2} style={{ padding: "4px 0" }} /></tr>;
   }
@@ -109,7 +105,8 @@ function Row({ row }: { row: ReportRow }) {
   );
 }
 
-export function ReportTable({ rows }: { rows: ReportRow[] }) {
+export function ReportTable({ rows, currency = "GBP" }: { rows: ReportRow[]; currency?: SupportedCurrency }) {
+  const fmt = (v: number) => formatAmountRaw(v, currency, { parens: true });
   return (
     <div
       className="rounded-2xl border overflow-hidden"
@@ -145,13 +142,13 @@ export function ReportTable({ rows }: { rows: ReportRow[] }) {
                 whiteSpace: "nowrap",
               }}
             >
-              Amount (£)
+              {`Amount (${CURRENCY_CONFIG[currency].symbol})`}
             </th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <Row key={i} row={row} />
+            <Row key={i} row={row} fmt={fmt} />
           ))}
         </tbody>
       </table>

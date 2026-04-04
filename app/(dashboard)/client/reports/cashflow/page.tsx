@@ -10,13 +10,9 @@ import { calculateCashFlow } from "@/lib/reports/report-calculations";
 import { exportCashFlowToPDF } from "@/lib/reports/generate-pdf";
 import { exportCashFlowToCSV, exportCashFlowToXLSX } from "@/lib/reports/generate-excel";
 import type { ReportDateRange } from "@/types/reports";
+import { useCurrency } from "@/lib/currency-context";
 
 const BRAND = { green: "#06D6A0", gold: "#D4AF37", accent: "#3E92CC", muted: "#6B7280" };
-
-function fmt(v: number) {
-  const abs = Math.abs(v).toLocaleString("en-GB", { minimumFractionDigits: 2 });
-  return v < 0 ? `(£${abs})` : `£${abs}`;
-}
 
 function buildCashFlowRows(report: ReturnType<typeof calculateCashFlow>): ReportRow[] {
   return [
@@ -53,6 +49,8 @@ function buildCashFlowRows(report: ReturnType<typeof calculateCashFlow>): Report
 }
 
 export default function CashFlowPage() {
+  const { currency, fmt } = useCurrency();
+
   return (
     <ReportPageShell
       label="Reports"
@@ -60,7 +58,7 @@ export default function CashFlowPage() {
       subtitle="Track how cash moved through your business — operating, investing, and financing activities"
       downloadLabel="Download Cash Flow"
       reviewedBy="Sarah Merchant, ACCA"
-      onDownloadPDF={(range) => exportCashFlowToPDF(calculateCashFlow(range), `cash-flow-${range.from}-to-${range.to}.pdf`)}
+      onDownloadPDF={(range) => exportCashFlowToPDF(calculateCashFlow(range), `cash-flow-${range.from}-to-${range.to}.pdf`, currency)}
       onDownloadCSV={(range) => exportCashFlowToCSV(calculateCashFlow(range), `cash-flow-${range.from}-to-${range.to}.csv`)}
       onDownloadXLSX={(range) => exportCashFlowToXLSX(calculateCashFlow(range), `cash-flow-${range.from}-to-${range.to}.xlsx`)}
     >
@@ -76,7 +74,7 @@ export default function CashFlowPage() {
                 { label: "Closing Balance",    value: fmt(report.closing_balance),    color: BRAND.gold,                                      icon: <Banknote size={16} />    },
               ]}
             />
-            <ReportTable rows={buildCashFlowRows(report)} />
+            <ReportTable rows={buildCashFlowRows(report)} currency={currency} />
             <p className="text-xs text-center" style={{ color: BRAND.muted }}>
               Period: {report.period_label}
               {report.reviewed_by && ` · Reviewed by ${report.reviewed_by}`}

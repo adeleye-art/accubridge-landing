@@ -1,10 +1,13 @@
+"use client";
+
 import { TrendingUp, TrendingDown, BarChart2, ArrowUpRight, ArrowDownRight, Building2, Handshake, Zap, Plus } from "lucide-react";
+import { useCurrency } from "@/lib/currency-context";
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 const STATS = [
   {
     label: "Total Income",
-    value: "£101,585",
+    amount: 101585,
     sub: "Current month",
     icon: <ArrowUpRight size={20} className="text-white" />,
     iconBg: "#16a34a",
@@ -14,7 +17,7 @@ const STATS = [
   },
   {
     label: "Total Expenses",
-    value: "£101,585",
+    amount: 101585,
     sub: "Current month",
     icon: <ArrowDownRight size={20} className="text-white" />,
     iconBg: "#dc2626",
@@ -24,7 +27,7 @@ const STATS = [
   },
   {
     label: "Net Profit",
-    value: "£0",
+    amount: 0,
     sub: "Current month",
     icon: <BarChart2 size={20} className="text-white" />,
     iconBg: "#1e3a6e",
@@ -51,7 +54,7 @@ const FUNDING = [
 ];
 
 const TRANSACTIONS = [
-  { date: "3/08/26", type: "Expense", category: "Salaries & Wages", amount: "£8,700" },
+  { date: "3/08/26", type: "Expense", category: "Salaries & Wages", amount: 8700 },
 ];
 
 // ─── Compliance gauge (SVG) ───────────────────────────────────────────────────
@@ -85,6 +88,8 @@ function ComplianceGauge({ score }: { score: number }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function ClientDashboard() {
+  const { fmt } = useCurrency();
+
   return (
     <div className="p-5 md:p-8 text-white">
       <div className="max-w-5xl mx-auto flex flex-col gap-5">
@@ -112,7 +117,7 @@ export default function ClientDashboard() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="text-sm mb-1" style={{ color: "#6B7280" }}>{s.label}</div>
-                  <div className="text-2xl font-bold" style={{ color: s.valueColor }}>{s.value}</div>
+                  <div className="text-2xl font-bold" style={{ color: s.valueColor }}>{fmt(s.amount)}</div>
                   <div className="text-xs mt-1" style={{ color: "#6B7280" }}>{s.sub}</div>
                 </div>
                 <div
@@ -362,7 +367,7 @@ export default function ClientDashboard() {
                     </span>
                     <span style={{ color: "rgba(255,255,255,0.7)" }}>{tx.category}</span>
                     <span className="text-right font-medium" style={{ color: tx.type === "Expense" ? "#ef4444" : "#06D6A0" }}>
-                      {tx.amount}
+                      {fmt(tx.amount)}
                     </span>
                   </div>
                 ))}

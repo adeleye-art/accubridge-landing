@@ -10,12 +10,9 @@ import { calculateBalanceSheet } from "@/lib/reports/report-calculations";
 import { exportBalanceSheetToPDF } from "@/lib/reports/generate-pdf";
 import { exportBalanceSheetToCSV, exportBalanceSheetToXLSX } from "@/lib/reports/generate-excel";
 import type { ReportDateRange } from "@/types/reports";
+import { useCurrency } from "@/lib/currency-context";
 
 const BRAND = { green: "#06D6A0", gold: "#D4AF37", accent: "#3E92CC", muted: "#6B7280" };
-
-function fmt(v: number) {
-  return `£${Math.abs(v).toLocaleString("en-GB", { minimumFractionDigits: 2 })}`;
-}
 
 function buildBalanceRows(report: ReturnType<typeof calculateBalanceSheet>): ReportRow[] {
   return [
@@ -73,6 +70,8 @@ function buildBalanceRows(report: ReturnType<typeof calculateBalanceSheet>): Rep
 }
 
 export default function BalanceSheetPage() {
+  const { currency, fmt } = useCurrency();
+
   return (
     <ReportPageShell
       label="Reports"
@@ -80,7 +79,7 @@ export default function BalanceSheetPage() {
       subtitle="Snapshot of your financial position — assets, liabilities, and equity at a point in time"
       downloadLabel="Download Balance Sheet"
       reviewedBy="Sarah Merchant, ACCA"
-      onDownloadPDF={(range) => exportBalanceSheetToPDF(calculateBalanceSheet(range.to), `balance-sheet-${range.to}.pdf`)}
+      onDownloadPDF={(range) => exportBalanceSheetToPDF(calculateBalanceSheet(range.to), `balance-sheet-${range.to}.pdf`, currency)}
       onDownloadCSV={(range) => exportBalanceSheetToCSV(calculateBalanceSheet(range.to), `balance-sheet-${range.to}.csv`)}
       onDownloadXLSX={(range) => exportBalanceSheetToXLSX(calculateBalanceSheet(range.to), `balance-sheet-${range.to}.xlsx`)}
     >
@@ -96,7 +95,7 @@ export default function BalanceSheetPage() {
                 { label: "Balance Check",     value: report.is_balanced ? "✓ Balanced" : "✗ Imbalanced", color: report.is_balanced ? BRAND.green : "#ef4444", icon: <CheckCircle2 size={16} /> },
               ]}
             />
-            <ReportTable rows={buildBalanceRows(report)} />
+            <ReportTable rows={buildBalanceRows(report)} currency={currency} />
             <p className="text-xs text-center" style={{ color: BRAND.muted }}>
               As of: {report.as_of_date}
               {report.reviewed_by && ` · Reviewed by ${report.reviewed_by}`}
