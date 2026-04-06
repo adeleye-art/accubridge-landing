@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Eye, RotateCcw, ExternalLink } from "lucide-react";
+import { Eye, RotateCcw, ExternalLink, ShieldCheck } from "lucide-react";
 import { BusinessRegistration, RegistrationStatus } from "@/types/tools";
 
 const BRAND = {
@@ -69,12 +69,14 @@ interface RegistrationHistoryTableProps {
   registrations: BusinessRegistration[];
   onViewDetails: (reg: BusinessRegistration) => void;
   onResume: (reg: BusinessRegistration) => void;
+  onRequestAudit: (reg: BusinessRegistration) => void;
 }
 
 export function RegistrationHistoryTable({
   registrations,
   onViewDetails,
   onResume,
+  onRequestAudit,
 }: RegistrationHistoryTableProps) {
   if (registrations.length === 0) {
     return (
@@ -105,7 +107,7 @@ export function RegistrationHistoryTable({
     >
       {/* Table header */}
       <div
-        className="grid grid-cols-[1fr_120px_130px_90px_100px] px-4 py-3 border-b"
+        className="grid grid-cols-[1fr_100px_120px_80px_130px] px-4 py-3 border-b"
         style={{
           backgroundColor: "rgba(255,255,255,0.05)",
           borderColor: "rgba(255,255,255,0.06)",
@@ -132,7 +134,7 @@ export function RegistrationHistoryTable({
         return (
           <div
             key={reg.id}
-            className="grid grid-cols-[1fr_120px_130px_90px_100px] px-4 py-4 border-b transition-colors duration-150"
+            className="grid grid-cols-[1fr_100px_120px_80px_130px] px-4 py-4 border-b transition-colors duration-150"
             style={{ borderColor: "rgba(255,255,255,0.04)" }}
             onMouseEnter={(e) => {
               e.currentTarget.style.backgroundColor =
@@ -195,7 +197,7 @@ export function RegistrationHistoryTable({
             </div>
 
             {/* Actions */}
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <button
                 type="button"
                 onClick={() => onViewDetails(reg)}
@@ -210,11 +212,10 @@ export function RegistrationHistoryTable({
                   e.currentTarget.style.color = BRAND.accent;
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor =
-                    "rgba(255,255,255,0.05)";
+                  e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.05)";
                   e.currentTarget.style.color = BRAND.muted;
                 }}
-                title="View details"
+                title="View business details"
               >
                 <Eye size={13} />
               </button>
@@ -233,11 +234,10 @@ export function RegistrationHistoryTable({
                     e.currentTarget.style.color = BRAND.gold;
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor =
-                      "rgba(255,255,255,0.05)";
+                    e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.05)";
                     e.currentTarget.style.color = BRAND.muted;
                   }}
-                  title="Resume application"
+                  title="Continue application"
                 >
                   <RotateCcw size={13} />
                 </button>
@@ -256,6 +256,27 @@ export function RegistrationHistoryTable({
                   <ExternalLink size={13} />
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => onRequestAudit(reg)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center border transition-all duration-200"
+                style={{
+                  backgroundColor: "rgba(255,255,255,0.05)",
+                  borderColor: "rgba(255,255,255,0.1)",
+                  color: BRAND.muted,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = `${BRAND.gold}20`;
+                  e.currentTarget.style.color = BRAND.gold;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.05)";
+                  e.currentTarget.style.color = BRAND.muted;
+                }}
+                title="Request audit"
+              >
+                <ShieldCheck size={13} />
+              </button>
             </div>
           </div>
         );

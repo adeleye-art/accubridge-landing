@@ -1,37 +1,57 @@
-import { ComplianceProfile } from "@/types/compliance";
+import { ComplianceBreakdown } from "@/types/compliance";
 
-export function calculateComplianceScore(profile: ComplianceProfile): number {
-  let score = 0;
+// ── Score bands (per PDF spec) ──────────────────────────────────────────────
+export function getScoreBandLabel(score: number): string {
+  if (score >= 85) return "Strong / Funding Ready";
+  if (score >= 70) return "Good / Minor Gaps";
+  if (score >= 50) return "Needs Attention";
+  return "High Risk / Incomplete";
+}
 
-  if (profile.kyc_status === "verified")       score += 25;
-  if (profile.company_status === "verified")   score += 25;
-  if (profile.risk_calculated)                 score += 20;
-  if (profile.passport_status === "generated") score += 10;
-  if (profile.missing_documents.filter((d) => d.required && !d.uploaded).length === 0) score += 10;
-  if (profile.company_name && profile.industry) score += 10;
-
-  return Math.min(score, 100);
+export function getScoreBand(score: number): "strong" | "good" | "attention" | "high_risk" {
+  if (score >= 85) return "strong";
+  if (score >= 70) return "good";
+  if (score >= 50) return "attention";
+  return "high_risk";
 }
 
 export function getScoreColor(score: number): string {
-  if (score >= 81) return "#06D6A0";
-  if (score >= 61) return "#3E92CC";
-  if (score >= 41) return "#D4AF37";
+  if (score >= 85) return "#06D6A0";
+  if (score >= 70) return "#3E92CC";
+  if (score >= 50) return "#D4AF37";
   return "#ef4444";
 }
 
-export function getScoreLabel(score: number): string {
-  if (score >= 81) return "Excellent";
-  if (score >= 61) return "Good";
-  if (score >= 41) return "Fair";
-  return "Poor";
+export function getSectionColor(earned: number, max: number): "green" | "amber" | "red" {
+  const pct = earned / max;
+  if (pct >= 0.75) return "green";
+  if (pct >= 0.4)  return "amber";
+  return "red";
 }
 
-export function getScoreBand(score: number): "excellent" | "good" | "fair" | "poor" {
-  if (score >= 81) return "excellent";
-  if (score >= 61) return "good";
-  if (score >= 41) return "fair";
-  return "poor";
+export function getSectionHex(earned: number, max: number): string {
+  const c = getSectionColor(earned, max);
+  return c === "green" ? "#06D6A0" : c === "amber" ? "#D4AF37" : "#ef4444";
+}
+
+export function calculateTotal(breakdown: ComplianceBreakdown): number {
+  return (
+    breakdown.identity.earned +
+    breakdown.registration.earned +
+    breakdown.tax.earned +
+    breakdown.financial.earned +
+    breakdown.risk.earned +
+    breakdown.documents.earned +
+    breakdown.behaviour.earned
+  );
+}
+
+// Legacy helpers kept for backward compat
+export function getScoreLabel(score: number): string {
+  if (score >= 85) return "Strong";
+  if (score >= 70) return "Good";
+  if (score >= 50) return "Fair";
+  return "Poor";
 }
 
 export function getRiskColor(level: string): string {

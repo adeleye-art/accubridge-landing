@@ -80,9 +80,9 @@ export function ComplianceScoreCard({
         <div className="flex items-center gap-2 justify-center sm:justify-start">
           <span className="text-2xl font-extrabold" style={{ color }}>{label}</span>
           <span className="text-sm" style={{ color: BRAND.muted }}>
-            {band === "excellent" ? "— Eligible for Compliance Passport"
+            {band === "strong" ? "— Eligible for Compliance Passport"
              : band === "good"    ? "— Almost there, minor gaps remaining"
-             : band === "fair"    ? "— Active compliance work needed"
+             : band === "attention" ? "— Active compliance work needed"
              :                      "— Significant steps required"}
           </span>
         </div>

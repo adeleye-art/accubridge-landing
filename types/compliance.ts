@@ -1,4 +1,49 @@
 export type VerificationStatus = "not_started" | "in_progress" | "pending" | "verified" | "failed";
+
+// ── New section-score types (PDF spec) ──────────────────────────────────────
+export type CheckStatus = "pass" | "fail" | "pending" | "review";
+export type SourceType = "user_input" | "internal_logic" | "api";
+
+export interface EvidenceCheck {
+  label: string;
+  status: CheckStatus;
+  points: number;
+  max: number;
+  source: string;         // e.g. "Sumsub", "Companies House", "User upload"
+  source_type: SourceType;
+  detail?: string;        // human-readable context sentence
+  checked_at: string;     // ISO timestamp
+}
+
+export interface SectionScore {
+  earned: number;
+  max: number;
+  passed: string[];
+  missing: string[];
+  checks: EvidenceCheck[];
+  action_label: string;   // CTA label e.g. "Verify Identity"
+  action_type: "upload" | "connect" | "review" | "fix";
+}
+
+export interface ComplianceBreakdown {
+  identity:     SectionScore;   // max 20
+  registration: SectionScore;   // max 15
+  tax:          SectionScore;   // max 15
+  financial:    SectionScore;   // max 20
+  risk:         SectionScore;   // max 15
+  documents:    SectionScore;   // max 10
+  behaviour:    SectionScore;   // max 5
+}
+
+export interface ActionItem {
+  id: string;
+  title: string;
+  description: string;
+  action_type: "upload" | "connect" | "review" | "fix";
+  priority: "high" | "medium" | "low";
+  due_date?: string;
+  section: keyof ComplianceBreakdown;
+}
 export type RiskLevel = "low" | "medium" | "high" | "very_high";
 export type PassportStatus = "locked" | "not_generated" | "generated";
 export type ComplianceStepId = "identity" | "company" | "risk" | "passport";

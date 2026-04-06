@@ -1,154 +1,459 @@
 "use client";
 
-import React, { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { PageHeader } from "@/components/shared/page-header";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
-import { ComplianceScoreCard } from "./_components/compliance-score-card";
-import { ComplianceJourney } from "./_components/compliance-journey";
-import { ComplianceOverviewGrid } from "./_components/compliance-overview-grid";
-import { CompanyDetailsCard } from "./_components/company-details-card";
-import { ComplianceFlagsCard } from "./_components/compliance-flags-card";
-import { MissingDocumentsCard } from "./_components/missing-documents-card";
-import { QuickActionsBar } from "./_components/quick-actions-bar";
+import { TopBanner } from "./_components/top-banner";
+import { SectionCard } from "./_components/section-card";
+import { ActionQueue } from "./_components/action-queue";
 import { KYCSheet } from "./_components/kyc-sheet";
 import { PassportSheet } from "./_components/passport-sheet";
-import { ComplianceProfile, KYCData, CompliancePassport } from "@/types/compliance";
-import { calculateComplianceScore } from "@/lib/compliance/calculate-score";
+import { UploadDocumentSheet } from "./_components/upload-document-sheet";
+import { ConnectDataSheet } from "./_components/connect-data-sheet";
+import { FixActionSheet, FixType } from "./_components/fix-action-sheet";
+import { ComplianceBreakdown, ActionItem, KYCData, CompliancePassport } from "@/types/compliance";
+import { calculateTotal } from "@/lib/compliance/calculate-score";
 
-const FRESH_COMPLIANCE: ComplianceProfile = {
-  overall_status:  "unverified",
-  compliance_score: 0,
-
-  kyc_status:      "not_started",
-  company_status:  "not_started",
-  risk_calculated: false,
-  passport_status: "locked",
-
-  kyc_data:             undefined,
-  company_verification: undefined,
-  risk_score:           undefined,
-  passport:             undefined,
-
-  company_name:      "Your Company",
-  industry:          "Unknown",
-  business_type:     "Unknown",
-  operating_country: "uk",
-
-  missing_documents: [
-    {
-      id:          "doc1",
-      label:       "Certificate of Incorporation",
-      description: "Companies House Certificate of Incorporation (UK) or CAC Certificate",
-      required:    true,
-      category:    "business",
-      uploaded:    false,
-    },
-    {
-      id:          "doc2",
-      label:       "Proof of Registered Address",
-      description: "Utility bill or bank statement dated within the last 3 months",
-      required:    true,
-      category:    "business",
-      uploaded:    false,
-    },
-    {
-      id:          "doc3",
-      label:       "VAT Certificate",
-      description: "HMRC or FIRS VAT registration certificate",
-      required:    false,
-      category:    "tax",
-      uploaded:    false,
-    },
-  ],
-
-  last_reviewed: undefined,
-  reviewed_by:   undefined,
+// ── Mock compliance breakdown — fresh / zero state ───────────────────────────
+const MOCK_BREAKDOWN: ComplianceBreakdown = {
+  identity: {
+    earned: 0, max: 20,
+    passed: [],
+    missing: [
+      "Owner KYC not yet verified (0/8)",
+      "Business KYB not started (0/7)",
+      "Director details not submitted (0/5)",
+    ],
+    action_label: "Start KYC Verification",
+    action_type: "review",
+    checks: [
+      {
+        label: "Owner KYC passed",
+        status: "fail", points: 0, max: 8,
+        source: "Sumsub", source_type: "api",
+        detail: "KYC not yet initiated. Complete identity verification to score this check.",
+        checked_at: "2026-04-06T09:00:00Z",
+      },
+      {
+        label: "Business KYB passed",
+        status: "fail", points: 0, max: 7,
+        source: "Sumsub", source_type: "api",
+        detail: "Business KYB not yet initiated. Required to verify the legal entity.",
+        checked_at: "2026-04-06T09:00:00Z",
+      },
+      {
+        label: "Beneficial owner / director details complete",
+        status: "fail", points: 0, max: 5,
+        source: "User submitted", source_type: "user_input",
+        detail: "Director details not yet submitted.",
+        checked_at: "2026-04-06T09:00:00Z",
+      },
+    ],
+  },
+  registration: {
+    earned: 0, max: 15,
+    passed: [],
+    missing: [
+      "Registration number not provided (0/3)",
+      "Legal name not verified against official record (0/5)",
+      "Entity status not confirmed (0/4)",
+      "Core profile incomplete (0/3)",
+    ],
+    action_label: "Fix Name Match",
+    action_type: "fix",
+    checks: [
+      {
+        label: "Registration number provided",
+        status: "fail", points: 0, max: 3,
+        source: "User submitted", source_type: "user_input",
+        detail: "No Companies House or CAC registration number submitted.",
+        checked_at: "2026-04-06T08:00:00Z",
+      },
+      {
+        label: "Legal name matches official record",
+        status: "fail", points: 0, max: 5,
+        source: "Companies House", source_type: "api",
+        detail: "Company name not yet verified against the official Companies House record.",
+        checked_at: "2026-04-06T08:00:00Z",
+      },
+      {
+        label: "Entity status active",
+        status: "fail", points: 0, max: 4,
+        source: "Companies House", source_type: "api",
+        detail: "Entity status not confirmed. Registration number required first.",
+        checked_at: "2026-04-06T08:00:00Z",
+      },
+      {
+        label: "Core profile complete",
+        status: "fail", points: 0, max: 3,
+        source: "Platform logic", source_type: "internal_logic",
+        detail: "Business name, industry, type, and operating country are not all populated.",
+        checked_at: "2026-04-06T08:00:00Z",
+      },
+    ],
+  },
+  tax: {
+    earned: 0, max: 15,
+    passed: [],
+    missing: [
+      "Tax ID not provided (0/4)",
+      "VAT / payroll status not declared (0/4)",
+      "Filing calendar not configured (0/3)",
+      "HMRC obligations not synced (0/4)",
+    ],
+    action_label: "Connect Tax Data",
+    action_type: "connect",
+    checks: [
+      {
+        label: "Tax ID provided",
+        status: "fail", points: 0, max: 4,
+        source: "User submitted", source_type: "user_input",
+        detail: "UTR / tax ID not yet submitted.",
+        checked_at: "2026-04-06T11:00:00Z",
+      },
+      {
+        label: "VAT / payroll setup declared",
+        status: "fail", points: 0, max: 4,
+        source: "User submitted", source_type: "user_input",
+        detail: "VAT registration and payroll status not yet declared.",
+        checked_at: "2026-04-06T11:00:00Z",
+      },
+      {
+        label: "Filing calendar configured",
+        status: "fail", points: 0, max: 3,
+        source: "Platform logic", source_type: "internal_logic",
+        detail: "No filing calendar set up. Connect your HMRC account to auto-populate obligations.",
+        checked_at: "2026-04-06T08:00:00Z",
+      },
+      {
+        label: "Obligations synced from HMRC",
+        status: "fail", points: 0, max: 4,
+        source: "HMRC VAT API", source_type: "api",
+        detail: "VAT obligations not yet retrieved. Connect HMRC to sync open and overdue obligations.",
+        checked_at: "2026-04-06T08:00:00Z",
+      },
+    ],
+  },
+  financial: {
+    earned: 0, max: 20,
+    passed: [],
+    missing: [
+      "No bank connected or statement imported (0/5)",
+      "No transactions imported (0/4)",
+      "Categorisation at 0% — minimum 80% required (0/4)",
+      "Reconciliation not started (0/5)",
+      "No receipt coverage (0/2)",
+    ],
+    action_label: "Connect Bank Account",
+    action_type: "connect",
+    checks: [
+      {
+        label: "Bank connected or statement imported",
+        status: "fail", points: 0, max: 5,
+        source: "TrueLayer", source_type: "api",
+        detail: "No bank account connected and no statement uploaded.",
+        checked_at: "2026-04-06T07:30:00Z",
+      },
+      {
+        label: "Transactions imported",
+        status: "fail", points: 0, max: 4,
+        source: "TrueLayer", source_type: "api",
+        detail: "No transactions available. Connect a bank account or import a statement first.",
+        checked_at: "2026-04-06T07:30:00Z",
+      },
+      {
+        label: "Categorisation completeness",
+        status: "fail", points: 0, max: 4,
+        source: "Platform logic", source_type: "internal_logic",
+        detail: "No transactions categorised. Minimum 80% required for full points.",
+        checked_at: "2026-04-06T08:00:00Z",
+      },
+      {
+        label: "Reconciliation current",
+        status: "fail", points: 0, max: 5,
+        source: "Platform logic", source_type: "internal_logic",
+        detail: "No reconciliation started. Reconcile within 30 days to score this check.",
+        checked_at: "2026-04-06T08:00:00Z",
+      },
+      {
+        label: "Receipt coverage / support evidence",
+        status: "fail", points: 0, max: 2,
+        source: "Platform logic", source_type: "internal_logic",
+        detail: "No receipts uploaded. Upload receipts for transactions over £50.",
+        checked_at: "2026-04-06T08:00:00Z",
+      },
+    ],
+  },
+  risk: {
+    earned: 0, max: 15,
+    passed: [],
+    missing: ["AML / sanctions screening not yet completed (0/15)"],
+    action_label: "Start AML Screening",
+    action_type: "review",
+    checks: [
+      {
+        label: "Sanctions screening clear",
+        status: "pending", points: 0, max: 15,
+        source: "Sumsub", source_type: "api",
+        detail: "AML/sanctions screening not yet initiated. KYC must be completed first.",
+        checked_at: "2026-04-06T09:00:00Z",
+      },
+      {
+        label: "PEP check clear",
+        status: "pending", points: 0, max: 0,
+        source: "Sumsub", source_type: "api",
+        detail: "PEP check runs automatically when KYC verification is complete.",
+        checked_at: "2026-04-06T09:00:00Z",
+      },
+      {
+        label: "Adverse media check clear",
+        status: "pending", points: 0, max: 0,
+        source: "Sumsub", source_type: "api",
+        detail: "Adverse media check runs automatically when KYC verification is complete.",
+        checked_at: "2026-04-06T09:00:00Z",
+      },
+    ],
+  },
+  documents: {
+    earned: 0, max: 10,
+    passed: [],
+    missing: [
+      "No core documents uploaded (0/6)",
+      "No active documents to verify expiry (0/4)",
+    ],
+    action_label: "Upload Documents",
+    action_type: "upload",
+    checks: [
+      {
+        label: "Required documents uploaded",
+        status: "fail", points: 0, max: 6,
+        source: "User submitted", source_type: "user_input",
+        detail: "No documents uploaded. Upload Certificate of Incorporation, proof of address, and director ID.",
+        checked_at: "2026-04-06T16:00:00Z",
+      },
+      {
+        label: "No expired core document",
+        status: "pending", points: 0, max: 4,
+        source: "Platform logic", source_type: "internal_logic",
+        detail: "No documents submitted yet. Upload required documents to score this check.",
+        checked_at: "2026-04-06T08:00:00Z",
+      },
+    ],
+  },
+  behaviour: {
+    earned: 0, max: 5,
+    passed: [],
+    missing: [
+      "No platform activity recorded (0/2)",
+      "Financial records not updated in 30 days (0/2)",
+      "Open compliance alerts unresolved (0/1)",
+    ],
+    action_label: "Resolve Alerts",
+    action_type: "fix",
+    checks: [
+      {
+        label: "Active monthly use",
+        status: "fail", points: 0, max: 2,
+        source: "Platform logic", source_type: "internal_logic",
+        detail: "No platform activity recorded for this account yet.",
+        checked_at: "2026-04-06T08:00:00Z",
+      },
+      {
+        label: "Timely record updates",
+        status: "fail", points: 0, max: 2,
+        source: "Platform logic", source_type: "internal_logic",
+        detail: "Financial records have not been updated.",
+        checked_at: "2026-04-06T08:00:00Z",
+      },
+      {
+        label: "No long-unresolved alerts",
+        status: "fail", points: 0, max: 1,
+        source: "Platform logic", source_type: "internal_logic",
+        detail: "Open compliance alerts need to be resolved.",
+        checked_at: "2026-04-06T08:00:00Z",
+      },
+    ],
+  },
 };
 
+const MOCK_ACTIONS: ActionItem[] = [
+  {
+    id: "a1",
+    title: "Complete owner identity verification (KYC)",
+    description: "Verify your identity via Sumsub to unlock the identity score and start AML checks.",
+    action_type: "review",
+    priority: "high",
+    section: "identity",
+  },
+  {
+    id: "a2",
+    title: "Start business KYB verification",
+    description: "Submit your registration number and Certificate of Incorporation to verify your legal entity.",
+    action_type: "fix",
+    priority: "high",
+    section: "identity",
+  },
+  {
+    id: "a3",
+    title: "Connect bank account or import statement",
+    description: "Link your bank via TrueLayer (UK) or Mono (Nigeria) to import transactions and unlock the financial score.",
+    action_type: "connect",
+    priority: "high",
+    section: "financial",
+  },
+  {
+    id: "a4",
+    title: "Upload core compliance documents",
+    description: "Upload your Certificate of Incorporation, proof of registered address, and director ID.",
+    action_type: "upload",
+    priority: "high",
+    section: "documents",
+  },
+  {
+    id: "a5",
+    title: "Connect HMRC to sync tax obligations",
+    description: "Connect your HMRC account to automatically retrieve VAT obligations and populate your filing calendar.",
+    action_type: "connect",
+    priority: "medium",
+    due_date: "2026-04-30",
+    section: "tax",
+  },
+  {
+    id: "a6",
+    title: "Fix legal name mismatch",
+    description: "Your submitted company name differs from the Companies House record. Update to match exactly.",
+    action_type: "fix",
+    priority: "medium",
+    section: "registration",
+  },
+  {
+    id: "a7",
+    title: "Resolve open compliance alerts",
+    description: "Review and close open compliance alerts to start building your behaviour score.",
+    action_type: "fix",
+    priority: "medium",
+    section: "behaviour",
+  },
+];
+
+const SECTION_KEYS = [
+  "identity", "registration", "tax", "financial", "risk", "documents", "behaviour",
+] as const;
+
 export default function CompliancePage() {
-  const router = useRouter();
-  const [profile, setProfile]               = useState<ComplianceProfile>(FRESH_COMPLIANCE);
-  const [kycOpen, setKycOpen]               = useState(false);
-  const [passportOpen, setPassportOpen]     = useState(false);
+  const [breakdown] = useState<ComplianceBreakdown>(MOCK_BREAKDOWN);
   const [requestReviewOpen, setRequestReviewOpen] = useState(false);
+  const [kycOpen, setKycOpen] = useState(false);
+  const [passportOpen, setPassportOpen] = useState(false);
+  const [passport, setPassport] = useState<CompliancePassport | undefined>(undefined);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadDocType, setUploadDocType] = useState("");
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [connectDefaultTab, setConnectDefaultTab] = useState<"bank" | "tax">("bank");
+  const [fixOpen, setFixOpen] = useState(false);
+  const [fixType, setFixType] = useState<FixType>("reconcile");
 
-  const liveScore   = calculateComplianceScore(profile);
-  const liveProfile = { ...profile, compliance_score: liveScore };
+  const totalScore = calculateTotal(breakdown);
+  const manualReviewRequired = false; // would be driven by backend flags
 
-  const buildRiskScore = () => ({
-    score:              42,
-    level:              "medium" as const,
-    calculated_at:      new Date().toISOString(),
-    aml_status:         "clear" as const,
-    pep_flag:           false,
-    sanctions_flag:     false,
-    adverse_media_flag: false,
-  });
-
-  const handleKYCSubmit = async (data: KYCData) => {
-    await new Promise((res) => setTimeout(res, 2000));
-    setProfile((p) => {
-      const companyDone = p.company_status === "verified";
-      return {
-        ...p,
-        kyc_status:      "verified",
-        kyc_data:        data,
-        overall_status:  "in_progress",
-        risk_score:      companyDone ? buildRiskScore() : undefined,
-        risk_calculated: companyDone,
-        passport_status: companyDone ? "not_generated" : "locked",
-      };
-    });
+  const handleAction = (item: ActionItem) => {
+    switch (item.action_type) {
+      case "upload":
+        setUploadDocType(item.section === "documents" ? "director_id" : "");
+        setUploadOpen(true);
+        break;
+      case "connect":
+        setConnectDefaultTab(item.section === "tax" ? "tax" : "bank");
+        setConnectOpen(true);
+        break;
+      case "fix":
+        if (item.section === "identity")      { setFixType("kyb");        setFixOpen(true); }
+        else if (item.section === "registration") { setFixType("name_match"); setFixOpen(true); }
+        else if (item.section === "financial" && item.id === "a6") { setFixType("categorise"); setFixOpen(true); }
+        else if (item.section === "financial") { setFixType("reconcile");  setFixOpen(true); }
+        else if (item.section === "behaviour") { setFixType("alerts");     setFixOpen(true); }
+        else                                   { setFixType("record_updates"); setFixOpen(true); }
+        return;
+      case "review":
+        if (item.section === "identity")      setKycOpen(true);
+        else if (item.section === "risk")     { setFixType("alerts_review"); setFixOpen(true); }
+        else if (item.section === "behaviour"){ setFixType("alerts");       setFixOpen(true); }
+        break;
+    }
   };
 
-  const handleVerifyCompany = async () => {
-    setProfile((p) => ({ ...p, company_status: "pending" }));
-    await new Promise((res) => setTimeout(res, 2000));
-    setProfile((p) => {
-      const kycDone = p.kyc_status === "verified";
-      return {
-        ...p,
-        company_status: "verified",
-        company_verification: {
-          business_name:       p.company_name,
-          registration_number: "15234789",
-          country:             p.operating_country === "nigeria" ? "nigeria" : "uk",
-          verified_at:         new Date().toISOString(),
-        },
-        overall_status:  "in_progress",
-        risk_score:      kycDone ? buildRiskScore() : undefined,
-        risk_calculated: kycDone,
-        passport_status: kycDone ? "not_generated" : "locked",
-      };
-    });
+  const handleSectionAction = (sectionKey: string, fixType?: string) => {
+    // Identity & Verification
+    if (fixType === "kyc") { setKycOpen(true); return; }
+    if (fixType === "kyb" || fixType === "director") { setFixType("kyb"); setFixOpen(true); return; }
+
+    // Registration & Legal Status
+    if (fixType === "name_match") { setFixType("name_match"); setFixOpen(true); return; }
+    if (fixType === "registration_number") { setFixType("registration_number"); setFixOpen(true); return; }
+    if (fixType === "entity_status") { setFixType("entity_status"); setFixOpen(true); return; }
+    if (fixType === "business_profile") { setFixType("business_profile"); setFixOpen(true); return; }
+    if (fixType === "registration") { setFixType("name_match"); setFixOpen(true); return; }
+
+    // Tax Setup
+    if (fixType === "tax_id") { setFixType("tax_id"); setFixOpen(true); return; }
+    if (fixType === "vat_setup") { setFixType("vat_setup"); setFixOpen(true); return; }
+    if (fixType === "hmrc_connect") { setFixType("hmrc_connect"); setFixOpen(true); return; }
+    if (fixType === "hmrc_sync") { setFixType("hmrc_sync"); setFixOpen(true); return; }
+    if (fixType === "tax_setup") { setConnectDefaultTab("tax"); setConnectOpen(true); return; }
+
+    // Financial Records
+    if (fixType === "bank_connect") { setFixType("bank_connect"); setFixOpen(true); return; }
+    if (fixType === "import_transactions") { setFixType("import_transactions"); setFixOpen(true); return; }
+    if (fixType === "categorise") { setFixType("categorise"); setFixOpen(true); return; }
+    if (fixType === "reconcile") { setFixType("reconcile"); setFixOpen(true); return; }
+    if (fixType === "receipts") { setFixType("receipts"); setFixOpen(true); return; }
+    if (fixType === "financial_setup") { setConnectDefaultTab("bank"); setConnectOpen(true); return; }
+
+    // AML / Risk
+    if (fixType === "alerts_review") { setFixType("alerts_review"); setFixOpen(true); return; }
+    if (fixType === "aml_review") { setFixType("alerts_review"); setFixOpen(true); return; }
+
+    // Documents
+    if (fixType === "documents_upload") { setFixType("documents_upload"); setFixOpen(true); return; }
+    if (fixType === "documents_check") { setFixType("documents_check"); setFixOpen(true); return; }
+
+    // Operating History / Behaviour
+    if (fixType === "activity_check") { setFixType("activity_check"); setFixOpen(true); return; }
+    if (fixType === "alerts") { setFixType("alerts"); setFixOpen(true); return; }
+    if (fixType === "record_updates") { setFixType("record_updates"); setFixOpen(true); return; }
+
+    // Fallback: section-based actions for footer button
+    switch (sectionKey) {
+      case "identity":     setKycOpen(true);                                             break;
+      case "registration": setFixType("name_match");   setFixOpen(true);                 break;
+      case "tax":          setConnectDefaultTab("tax"); setConnectOpen(true);            break;
+      case "financial":    setConnectDefaultTab("bank"); setConnectOpen(true);           break;
+      case "risk":         setFixType("alerts_review"); setFixOpen(true);                break;
+      case "documents":    setUploadDocType("");        setUploadOpen(true);             break;
+      case "behaviour":    setFixType("alerts");        setFixOpen(true);                break;
+    }
+  };
+
+  const handleKYCSubmit = async (_data: KYCData) => {
+    await new Promise((res) => setTimeout(res, 1500));
+    // Modal stays open - user clicks close/back button to dismiss
   };
 
   const handleGeneratePassport = async (): Promise<CompliancePassport> => {
     await new Promise((res) => setTimeout(res, 1500));
-    const passport: CompliancePassport = {
-      passport_id:  `GBR${Math.floor(Math.random() * 9000000) + 1000000}A`,
-      issued_at:    new Date().toISOString(),
-      expires_at:   new Date(Date.now() + 4 * 365 * 24 * 60 * 60 * 1000).toISOString(),
-      status:       "generated",
+    const p: CompliancePassport = {
+      passport_id: `GBR${Math.floor(Math.random() * 9000000) + 1000000}A`,
+      issued_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + 4 * 365 * 24 * 60 * 60 * 1000).toISOString(),
+      status: "generated",
       verification_badges: { identity: true, company: true, tax: true, aml: true },
     };
-    setProfile((p) => ({
-      ...p,
-      passport_status: "generated",
-      passport,
-      overall_status:  "verified",
-    }));
-    return passport;
+    setPassport(p);
+    return p;
   };
 
-  const handleDocumentUpload = (docId: string, _file: File) => {
-    setProfile((p) => ({
-      ...p,
-      missing_documents: p.missing_documents.map((d) =>
-        d.id === docId ? { ...d, uploaded: true } : d
-      ),
-    }));
+  const handleDownload = () => {
+    setPassportOpen(true);
   };
 
   return (
@@ -156,65 +461,82 @@ export default function CompliancePage() {
       <div className="max-w-5xl mx-auto">
 
         <PageHeader
-          badge="Client Dashboard"
-          title="Compliance Passport"
-          description="Complete your compliance journey to generate your digital passport and unlock funding access"
+          badge="Compliance"
+          title="Compliance Centre"
+          description="Your AccuBridge readiness score — built from verified identity, registration, tax, financials, and risk"
         />
 
-        <ComplianceScoreCard
-          score={liveScore}
-          overallStatus={liveProfile.overall_status}
-          reviewedBy={liveProfile.reviewed_by}
-          lastReviewed={liveProfile.last_reviewed}
+        {/* Top banner — score + 3 buttons */}
+        <TopBanner
+          score={totalScore}
+          lastUpdated="2026-04-06T08:00:00Z"
+          manualReviewRequired={manualReviewRequired}
+          onDownload={handleDownload}
+          onRequestReview={() => setRequestReviewOpen(true)}
+          onApplyFixes={() => document.getElementById("action-queue")?.scrollIntoView({ behavior: "smooth" })}
         />
 
-        <ComplianceJourney
-          profile={liveProfile}
-          onLaunchKYC={() => setKycOpen(true)}
-          onVerifyCompany={handleVerifyCompany}
-          onGeneratePassport={() => setPassportOpen(true)}
-          onViewRiskScore={() => {
-            document.getElementById("risk-score-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
-          }}
-        />
-
-        <ComplianceOverviewGrid profile={liveProfile} />
-
-        <div id="risk-score-section" className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
-          <CompanyDetailsCard profile={liveProfile} />
-          <ComplianceFlagsCard profile={liveProfile} />
+        {/* Section cards grid — 7 sections */}
+        <div className="mb-8">
+          <div className="mb-3">
+            <h3 className="text-white font-bold text-base">Score Breakdown</h3>
+            <p className="text-xs mt-0.5" style={{ color: "#6B7280" }}>
+              Click any card to view evidence, sources, and details for that section
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {SECTION_KEYS.map((key) => (
+              <SectionCard
+                key={key}
+                sectionKey={key}
+                section={breakdown[key]}
+                onAction={(fixType) => handleSectionAction(key, fixType)}
+              />
+            ))}
+          </div>
         </div>
 
-        <div className="mb-5">
-          <MissingDocumentsCard
-            documents={liveProfile.missing_documents}
-            onUpload={handleDocumentUpload}
+        {/* Action queue */}
+        <div id="action-queue" className="mb-8">
+          <ActionQueue
+            items={MOCK_ACTIONS}
+            onAction={handleAction}
           />
         </div>
 
-        <QuickActionsBar
-          profile={liveProfile}
-          onLaunchKYC={() => setKycOpen(true)}
-          onVerifyCompany={handleVerifyCompany}
-          onGeneratePassport={() => setPassportOpen(true)}
-          onRequestReview={() => setRequestReviewOpen(true)}
-          onApplyFunding={() => router.push("/client/funding")}
-        />
-
+        {/* Sheets */}
         <KYCSheet
           isOpen={kycOpen}
           onClose={() => setKycOpen(false)}
-          existingData={liveProfile.kyc_data}
+          existingData={undefined}
           onSubmit={handleKYCSubmit}
         />
 
         <PassportSheet
           isOpen={passportOpen}
           onClose={() => setPassportOpen(false)}
-          passport={liveProfile.passport}
-          companyName={liveProfile.company_name}
+          passport={passport}
+          companyName="Apex Solutions Ltd"
           onGenerate={handleGeneratePassport}
-          onDownload={() => { /* TODO: trigger PDF download */ }}
+          onDownload={() => {}}
+        />
+
+        <UploadDocumentSheet
+          isOpen={uploadOpen}
+          onClose={() => setUploadOpen(false)}
+          defaultDocType={uploadDocType}
+        />
+
+        <ConnectDataSheet
+          isOpen={connectOpen}
+          onClose={() => setConnectOpen(false)}
+          defaultTab={connectDefaultTab}
+        />
+
+        <FixActionSheet
+          isOpen={fixOpen}
+          onClose={() => setFixOpen(false)}
+          fixType={fixType}
         />
 
         <ConfirmDialog
@@ -226,7 +548,7 @@ export default function CompliancePage() {
           }}
           variant="default"
           title="Request Compliance Review"
-          description="Your assigned AccuBridge accountant will review your compliance status and update your score. You'll be notified within 1–2 business days."
+          description="Your assigned AccuBridge accountant will review your compliance status and update your score. You will be notified within 1–2 business days."
           confirmLabel="Request Review"
           cancelLabel="Not Now"
         />

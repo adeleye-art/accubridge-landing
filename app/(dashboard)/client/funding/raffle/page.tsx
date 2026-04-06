@@ -7,27 +7,36 @@ import { PageHeader } from "@/components/shared/page-header";
 import type { RaffleEntry } from "@/types/funding";
 
 const BRAND = { primary: "#0A2463", gold: "#D4AF37", green: "#06D6A0", accent: "#3E92CC", muted: "#6B7280" };
+const TICKET_PRICE = 25;
+const MIN_TICKETS = 5;
 
 export default function RaffleFundingPage() {
   const [entries, setEntries] = useState<RaffleEntry[]>([]);
   const [isEntering, setIsEntering] = useState(false);
   const [justEntered, setJustEntered] = useState(false);
+  const [pendingTickets, setPendingTickets] = useState(0);
 
-  const activeEntry = entries.find((e) => e.status === "active");
+  const activeEntries = entries.filter((e) => e.status === "active");
+  const latestEntry = activeEntries[0];
+  const canConfirm = pendingTickets >= MIN_TICKETS;
+  const totalCost = pendingTickets * TICKET_PRICE;
 
-  const handleEnter = async () => {
+  const handleBuyTicket = () => setPendingTickets((c) => c + 1);
+
+  const handleConfirmEntry = async () => {
     setIsEntering(true);
     await new Promise((res) => setTimeout(res, 1200));
-    const newEntry: RaffleEntry = {
-      id: `r${Date.now()}`,
+    const newEntries: RaffleEntry[] = Array.from({ length: pendingTickets }, (_, i) => ({
+      id: `r${Date.now()}-${i}`,
       raffle_id: `RFL-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 9000) + 1000)}`,
       raffle_number: Math.floor(Math.random() * 2000) + 1,
       entry_date: new Date().toISOString().split("T")[0],
       draw_date: "2026-06-30",
-      status: "active",
-      entry_fee: 25,
-    };
-    setEntries((prev) => [newEntry, ...prev]);
+      status: "active" as const,
+      entry_fee: TICKET_PRICE,
+    }));
+    setEntries((prev) => [...newEntries, ...prev]);
+    setPendingTickets(0);
     setIsEntering(false);
     setJustEntered(true);
     setTimeout(() => setJustEntered(false), 3000);
@@ -126,58 +135,97 @@ export default function RaffleFundingPage() {
 
             {/* CTA card */}
             <div className="rounded-2xl border p-6 flex flex-col gap-5"
-              style={{ backgroundColor: "rgba(255,255,255,0.04)", borderColor: activeEntry ? `${BRAND.gold}30` : "rgba(255,255,255,0.08)" }}>
+              style={{ backgroundColor: "rgba(255,255,255,0.04)", borderColor: activeEntries.length > 0 ? `${BRAND.gold}30` : "rgba(255,255,255,0.08)" }}>
 
               {justEntered && (
                 <div className="flex items-center gap-2 px-4 py-3 rounded-xl border"
                   style={{ backgroundColor: `${BRAND.green}12`, borderColor: `${BRAND.green}30` }}>
                   <CheckCircle2 size={15} style={{ color: BRAND.green }} />
-                  <span className="text-sm font-medium" style={{ color: BRAND.green }}>Entry confirmed!</span>
+                  <span className="text-sm font-medium" style={{ color: BRAND.green }}>Draw entry confirmed!</span>
                 </div>
               )}
 
-              {activeEntry ? (
-                <>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 size={18} style={{ color: BRAND.green }} />
-                    <span className="text-sm font-bold" style={{ color: BRAND.green }}>You have an active entry</span>
+              {/* Active entry display */}
+              {latestEntry && (
+                <div className="rounded-xl border p-4 flex flex-col gap-2"
+                  style={{ backgroundColor: `${BRAND.gold}08`, borderColor: `${BRAND.gold}25` }}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <CheckCircle2 size={14} style={{ color: BRAND.green }} />
+                    <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: BRAND.green }}>Active Entry</span>
+                    <span className="ml-auto text-xs" style={{ color: BRAND.muted }}>{activeEntries.length} ticket{activeEntries.length !== 1 ? "s" : ""}</span>
                   </div>
-                  <div className="rounded-xl border p-4 flex flex-col gap-2"
-                    style={{ backgroundColor: `${BRAND.gold}08`, borderColor: `${BRAND.gold}25` }}>
-                    <div className="text-xs font-semibold uppercase tracking-widest" style={{ color: BRAND.muted }}>Raffle ID</div>
-                    <div className="text-xl font-black font-mono" style={{ color: BRAND.gold }}>{activeEntry.raffle_id}</div>
-                    <div className="flex items-center gap-3 text-xs" style={{ color: BRAND.muted }}>
-                      <span>Ticket #{activeEntry.raffle_number}</span>
-                      <span>·</span>
-                      <span>Draw: {new Date(activeEntry.draw_date).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</span>
-                    </div>
+                  <div className="text-xl font-black font-mono" style={{ color: BRAND.gold }}>{latestEntry.raffle_id}</div>
+                  <div className="flex items-center gap-3 text-xs" style={{ color: BRAND.muted }}>
+                    <span>Ticket #{latestEntry.raffle_number}</span>
+                    <span>·</span>
+                    <span>Draw: {new Date(latestEntry.draw_date).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</span>
                   </div>
-                  <p className="text-xs" style={{ color: "rgba(255,255,255,0.45)" }}>
-                    You can enter additional draws. Each entry gets its own unique ID and ticket number.
-                  </p>
-                </>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  <div className="text-base font-bold text-white">Enter the next draw</div>
-                  <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.55)" }}>
-                    Pay £25 to secure your spot in the Q2 2026 draw. You'll receive a unique raffle ID immediately.
-                  </p>
                 </div>
               )}
 
+              {/* Ticket purchase section */}
+              <div className="flex flex-col gap-2">
+                <div className="text-base font-bold text-white">Buy tickets</div>
+                <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.55)" }}>
+                  Buy at least {MIN_TICKETS} tickets to unlock your draw entry. Each ticket costs £{TICKET_PRICE}.
+                </p>
+              </div>
+
+              {/* Pending tickets progress */}
+              <div className="rounded-xl border p-4 flex flex-col gap-3"
+                style={{ backgroundColor: "rgba(255,255,255,0.03)", borderColor: "rgba(255,255,255,0.09)" }}>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: BRAND.muted }}>Tickets purchased</span>
+                  <span className="text-lg font-black" style={{ color: canConfirm ? BRAND.gold : "#fff" }}>
+                    {pendingTickets} <span className="text-xs font-normal" style={{ color: BRAND.muted }}>/ {MIN_TICKETS} min</span>
+                  </span>
+                </div>
+                {/* Progress bar */}
+                <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: "rgba(255,255,255,0.08)" }}>
+                  <div
+                    className="h-full rounded-full transition-all duration-300"
+                    style={{
+                      width: `${Math.min((pendingTickets / MIN_TICKETS) * 100, 100)}%`,
+                      backgroundColor: canConfirm ? BRAND.gold : BRAND.accent,
+                    }}
+                  />
+                </div>
+                {pendingTickets > 0 && (
+                  <div className="flex items-center justify-between text-xs" style={{ color: BRAND.muted }}>
+                    <span>Subtotal</span>
+                    <span className="font-bold text-white">£{totalCost}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Buy ticket button */}
               <button
                 type="button"
-                onClick={handleEnter}
-                disabled={isEntering}
-                className="w-full flex items-center justify-center gap-2 h-12 rounded-xl text-sm font-bold transition-all duration-200 disabled:opacity-60"
-                style={{ backgroundColor: BRAND.gold, color: BRAND.primary }}
-                onMouseEnter={(e) => { if (!isEntering) e.currentTarget.style.opacity = "0.9"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
+                onClick={handleBuyTicket}
+                className="w-full flex items-center justify-center gap-2 h-11 rounded-xl text-sm font-bold transition-all duration-200"
+                style={{ backgroundColor: "rgba(255,255,255,0.08)", color: "#fff", border: "1px solid rgba(255,255,255,0.12)" }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.13)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.08)"; }}
               >
-                {isEntering
-                  ? <><Loader2 size={15} className="animate-spin" />Processing…</>
-                  : <><Ticket size={15} />{activeEntry ? "Enter another draw — £25" : "Enter next draw — £25"}</>}
+                <Ticket size={15} />Buy a ticket — £{TICKET_PRICE}
               </button>
+
+              {/* Confirm entry button — only when >= MIN_TICKETS */}
+              {canConfirm && (
+                <button
+                  type="button"
+                  onClick={handleConfirmEntry}
+                  disabled={isEntering}
+                  className="w-full flex items-center justify-center gap-2 h-12 rounded-xl text-sm font-bold transition-all duration-200 disabled:opacity-60"
+                  style={{ backgroundColor: BRAND.gold, color: BRAND.primary }}
+                  onMouseEnter={(e) => { if (!isEntering) e.currentTarget.style.opacity = "0.9"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
+                >
+                  {isEntering
+                    ? <><Loader2 size={15} className="animate-spin" />Processing…</>
+                    : <><CheckCircle2 size={15} />Confirm entry — {pendingTickets} tickets · £{totalCost}</>}
+                </button>
+              )}
             </div>
 
             {/* My entries */}

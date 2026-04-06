@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import { Check, ChevronRight } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { Check, ChevronRight, Upload, CheckCircle2, BookmarkCheck } from "lucide-react";
 import { SystemSheet } from "@/components/shared/system-sheet";
 import { useCurrency } from "@/lib/currency-context";
 import {
@@ -127,6 +127,67 @@ function FToggle({
           style={{ left: checked ? "calc(100% - 18px)" : "2px" }}
         />
       </div>
+    </div>
+  );
+}
+
+function FFileUpload({
+  label,
+  hint,
+  uploaded,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  uploaded: boolean;
+  onChange: (uploaded: boolean) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [fileName, setFileName] = useState<string>("");
+
+  return (
+    <div
+      className="flex items-center justify-between p-4 rounded-xl border transition-all duration-200"
+      style={{
+        backgroundColor: uploaded ? `${BRAND.green}08` : "rgba(255,255,255,0.04)",
+        borderColor: uploaded ? `${BRAND.green}30` : "rgba(255,255,255,0.1)",
+      }}
+    >
+      <div className="flex-1 min-w-0 pr-3">
+        <div className="text-sm text-white font-medium">{label}</div>
+        {fileName ? (
+          <div className="text-xs mt-0.5 truncate" style={{ color: BRAND.green }}>{fileName}</div>
+        ) : (
+          hint && <div className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.4)" }}>{hint}</div>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        className="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold flex-shrink-0 transition-all duration-200"
+        style={{
+          backgroundColor: uploaded ? `${BRAND.green}20` : "rgba(255,255,255,0.08)",
+          color: uploaded ? BRAND.green : "#fff",
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.8"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
+      >
+        {uploaded ? <CheckCircle2 size={12} /> : <Upload size={12} />}
+        {uploaded ? "Uploaded" : "Upload"}
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".pdf,.jpg,.jpeg,.png"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            setFileName(file.name);
+            onChange(true);
+          }
+        }}
+      />
     </div>
   );
 }
@@ -970,16 +1031,16 @@ function NGStep4({
           ))}
         </FSelect>
       </FField>
-      <FToggle
-        label="Valid ID Uploaded"
-        hint="International passport, NIN slip, or driver's licence"
-        checked={!!data.id_uploaded}
+      <FFileUpload
+        label="Valid ID"
+        hint="Upload international passport, NIN slip, or driver's licence (PDF/JPG/PNG)"
+        uploaded={!!data.id_uploaded}
         onChange={(v) => onChange({ ...data, id_uploaded: v })}
       />
-      <FToggle
-        label="Memorandum & Articles Prepared"
-        hint="Required for LLC registration — AccuBridge can generate a template"
-        checked={!!data.memorandum_uploaded}
+      <FFileUpload
+        label="Memorandum & Articles of Association"
+        hint="Required for LLC — upload your document or AccuBridge can generate a template"
+        uploaded={!!data.memorandum_uploaded}
         onChange={(v) => onChange({ ...data, memorandum_uploaded: v })}
       />
       <FToggle
@@ -1023,7 +1084,7 @@ export function NewRegistrationSheet({
     editRegistration?.country || null
   );
   const [step, setStep] = useState(
-    editRegistration ? editRegistration.current_step - 1 : 0
+    editRegistration ? Math.max(0, editRegistration.current_step - 1) : 0
   );
   const [ukData, setUkData] = useState<Partial<UKRegistrationData>>(
     editRegistration?.uk_data || {}
@@ -1032,13 +1093,53 @@ export function NewRegistrationSheet({
     editRegistration?.nigeria_data || {}
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [draftSaved, setDraftSaved] = useState(false);
+
+  // Sync state whenever the sheet opens (handles resume / switching registrations)
+  useEffect(() => {
+    if (isOpen) {
+      setCountry(editRegistration?.country || null);
+      setStep(editRegistration ? Math.max(0, editRegistration.current_step - 1) : 0);
+      setUkData(editRegistration?.uk_data || {});
+      setNgData(editRegistration?.nigeria_data || {});
+      setDraftSaved(false);
+    }
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleClose = () => {
     setCountry(null);
     setStep(0);
     setUkData({});
     setNgData({});
+    setDraftSaved(false);
     onClose();
+  };
+
+  const handleSaveDraft = async () => {
+    if (!country) return;
+    setIsSavingDraft(true);
+    await onComplete({
+      country,
+      business_name:
+        country === "uk"
+          ? ukData.proposed_company_name || "Draft Registration"
+          : ngData.proposed_name_1 || "Draft Registration",
+      structure:
+        country === "uk"
+          ? UK_STRUCTURES.find((s) => s.value === ukData.business_structure)?.label || ""
+          : NG_TYPES.find((t) => t.value === ngData.business_type)?.label || "",
+      status: "draft",
+      initiated_at: editRegistration?.initiated_at || new Date().toISOString().split("T")[0],
+      last_updated: new Date().toISOString().split("T")[0],
+      current_step: step + 1,
+      total_steps: 4,
+      uk_data: country === "uk" ? ukData : undefined,
+      nigeria_data: country === "nigeria" ? ngData : undefined,
+    });
+    setIsSavingDraft(false);
+    setDraftSaved(true);
+    setTimeout(() => setDraftSaved(false), 3000);
   };
 
   const handleSubmit = async () => {
@@ -1082,6 +1183,31 @@ export function NewRegistrationSheet({
       title={sheetTitle}
       description={sheetDescription}
       width={520}
+      footer={country ? (
+        <div className="flex flex-col gap-2">
+          {draftSaved && (
+            <div
+              className="flex items-center gap-2 px-3 py-2 rounded-xl border"
+              style={{ backgroundColor: `${BRAND.gold}12`, borderColor: `${BRAND.gold}30` }}
+            >
+              <BookmarkCheck size={13} style={{ color: BRAND.gold }} />
+              <span className="text-xs font-medium" style={{ color: BRAND.gold }}>Draft saved — you can resume any time</span>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={handleSaveDraft}
+            disabled={isSavingDraft}
+            className="w-full flex items-center justify-center gap-2 h-10 rounded-xl text-sm font-semibold border transition-all duration-200 disabled:opacity-50"
+            style={{ borderColor: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.65)", backgroundColor: "transparent" }}
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.06)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
+          >
+            <BookmarkCheck size={14} />
+            {isSavingDraft ? "Saving…" : "Save as Draft"}
+          </button>
+        </div>
+      ) : undefined}
     >
       {/* Country select */}
       {!country && (

@@ -5,6 +5,7 @@ import { Plus, CheckCircle2, Clock, FileText } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { RegistrationHistoryTable } from "./_components/registration-history-table";
 import { NewRegistrationSheet } from "./_components/new-registration-sheet";
+import { BusinessDetailsSheet } from "./_components/business-details-sheet";
 import { BusinessRegistration } from "@/types/tools";
 
 const BRAND = {
@@ -61,6 +62,8 @@ export default function RegistrationPage() {
     useState<BusinessRegistration[]>(MOCK_REGISTRATIONS);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingReg, setEditingReg] = useState<BusinessRegistration | null>(null);
+  const [viewingReg, setViewingReg] = useState<BusinessRegistration | null>(null);
+  const [auditedRegId, setAuditedRegId] = useState<string | null>(null);
 
   const handleNewComplete = async (regData: Omit<BusinessRegistration, "id">) => {
     await new Promise((res) => setTimeout(res, 1000));
@@ -85,8 +88,12 @@ export default function RegistrationPage() {
   };
 
   const handleViewDetails = (reg: BusinessRegistration) => {
-    setEditingReg(reg);
-    setSheetOpen(true);
+    setViewingReg(reg);
+  };
+
+  const handleRequestAudit = (reg: BusinessRegistration) => {
+    setAuditedRegId(reg.id);
+    setTimeout(() => setAuditedRegId(null), 3000);
   };
 
   const completed = registrations.filter((r) => r.status === "completed").length;
@@ -165,73 +172,6 @@ export default function RegistrationPage() {
           ))}
         </div>
 
-        {/* Info panels — UK + Nigeria */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-          {[
-            {
-              flag: "🇬🇧",
-              country: "United Kingdom",
-              body: "Companies House",
-              color: BRAND.accent,
-              points: [
-                "Certificate within 24 hours",
-                "Ltd, LLP, Sole Trader, CIC",
-                "Filing fee from £50",
-                "Fully online via AccuBridge",
-              ],
-            },
-            {
-              flag: "🇳🇬",
-              country: "Nigeria",
-              body: "Corporate Affairs Commission (CAC)",
-              color: BRAND.green,
-              points: [
-                "Name reservation in 24–48 hours",
-                "Business Name, LLC, Incorporated Trustee",
-                "Real-time status tracking",
-                "Full document management",
-              ],
-            },
-          ].map((opt) => (
-            <div
-              key={opt.country}
-              className="rounded-2xl border p-4 flex flex-col gap-3"
-              style={{
-                backgroundColor: `${opt.color}06`,
-                borderColor: `${opt.color}18`,
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-xl">{opt.flag}</span>
-                <div>
-                  <div className="text-white font-semibold text-sm">
-                    {opt.country}
-                  </div>
-                  <div className="text-[11px]" style={{ color: opt.color }}>
-                    {opt.body}
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                {opt.points.map((p) => (
-                  <div key={p} className="flex items-center gap-2">
-                    <div
-                      className="w-1 h-1 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: opt.color }}
-                    />
-                    <span
-                      className="text-xs"
-                      style={{ color: "rgba(255,255,255,0.55)" }}
-                    >
-                      {p}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-
         {/* History table */}
         <div className="flex flex-col gap-3">
           <div>
@@ -239,14 +179,28 @@ export default function RegistrationPage() {
               Registration History
             </h3>
             <p className="text-xs mt-0.5" style={{ color: BRAND.muted }}>
-              {total} registration{total !== 1 ? "s" : ""} · click Resume to
-              continue a draft
+              {total} registration{total !== 1 ? "s" : ""} ·
+              <span style={{ color: BRAND.gold }}> eye</span> = view details ·
+              <span style={{ color: BRAND.gold }}> ↺</span> = continue ·
+              <span style={{ color: BRAND.gold }}> shield</span> = request audit
             </p>
           </div>
+          {auditedRegId && (
+            <div
+              className="flex items-center gap-2 px-4 py-3 rounded-xl border"
+              style={{ backgroundColor: `${BRAND.gold}10`, borderColor: `${BRAND.gold}25` }}
+            >
+              <CheckCircle2 size={15} style={{ color: BRAND.gold }} />
+              <span className="text-sm font-medium" style={{ color: BRAND.gold }}>
+                Audit request submitted — our team will review and be in touch.
+              </span>
+            </div>
+          )}
           <RegistrationHistoryTable
             registrations={registrations}
             onViewDetails={handleViewDetails}
             onResume={handleResume}
+            onRequestAudit={handleRequestAudit}
           />
         </div>
 
@@ -258,6 +212,11 @@ export default function RegistrationPage() {
           }}
           onComplete={handleNewComplete}
           editRegistration={editingReg}
+        />
+
+        <BusinessDetailsSheet
+          reg={viewingReg}
+          onClose={() => setViewingReg(null)}
         />
       </div>
     </div>

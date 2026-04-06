@@ -78,6 +78,16 @@ export function PassportSheet({
       description="Your digital compliance certificate — downloadable and shareable"
       footer={footer}
     >
+      <button
+        type="button"
+        onClick={onClose}
+        className="mb-4 text-sm font-semibold flex items-center gap-1.5 transition-colors"
+        style={{ color: BRAND.accent }}
+        onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.7"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
+      >
+        ← Back to Summary
+      </button>
       {localPassport ? (
         <div className="flex flex-col gap-5">
           {/* Passport card visual */}
