@@ -33,7 +33,8 @@ const SignIn = () => {
       localStorage.setItem("auth_token", data.token);
       if (data.refreshToken) localStorage.setItem("refresh_token", data.refreshToken);
 
-      const roleRaw = data.role ?? data.userRole ?? "";
+      // API returns roles as an array; fall back to legacy scalar fields
+      const roleRaw = data.roles?.[0] ?? data.role ?? data.userRole ?? "";
       const { role, country, dest } = deriveRole(roleRaw);
       document.cookie = `accubridge_role=${role}; path=/; max-age=86400`;
       document.cookie = `accubridge_country=${country}; path=/; max-age=86400`;

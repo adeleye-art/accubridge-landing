@@ -7,7 +7,13 @@ export interface SignInRequest {
 
 export interface SignInResponse {
   token: string;
-  refreshToken: string;
+  expiration?: string;
+  refreshToken?: string;
+  userId?: number;
+  email?: string;
+  fullName?: string;
+  roles?: string[];
+  /** Legacy fields — kept for backwards compat */
   role?: string | number;
   userRole?: string | number;
   [key: string]: unknown;
