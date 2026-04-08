@@ -84,6 +84,12 @@ export default function OnboardingPage() {
     router.push("/");
   }
 
+  /* ── Skip onboarding ── */
+  function handleSkip() {
+    document.cookie = "accubridge_onboarding_done=1; path=/; max-age=31536000; SameSite=Lax";
+    router.push("/client/dashboard");
+  }
+
   /* ── Final submit ── */
   function handleFinish(step5: Step5Data) {
     const final: OnboardingProgress = {
@@ -238,6 +244,7 @@ export default function OnboardingPage() {
         currentStep={progress.current_step}
         completedSteps={progress.completed_steps}
         onSaveExit={handleSaveExit}
+        onSkip={handleSkip}
       >
         {stepContent()}
       </OnboardingShell>

@@ -15,13 +15,8 @@ export function OnboardingGuard({ children }: { children: React.ReactNode }) {
   const [allowed, setAllowed] = useState(false);
 
   useEffect(() => {
-    const progress = loadOnboardingProgress();
-
-    if (progress?.onboarding_complete) {
-      setAllowed(true);
-    } else {
-      router.replace(`/onboarding?next=${encodeURIComponent(pathname)}`);
-    }
+    // Onboarding is optional — allow access regardless of completion status.
+    setAllowed(true);
   }, [pathname, router]);
 
   if (!allowed) return null;

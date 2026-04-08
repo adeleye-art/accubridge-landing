@@ -11,10 +11,11 @@ interface Props {
   currentStep: OnboardingStep;
   completedSteps: OnboardingStep[];
   onSaveExit: () => void;
+  onSkip: () => void;
   children: React.ReactNode;
 }
 
-export function OnboardingShell({ currentStep, completedSteps, onSaveExit, children }: Props) {
+export function OnboardingShell({ currentStep, completedSteps, onSaveExit, onSkip, children }: Props) {
   const progress  = Math.round((completedSteps.length / 5) * 100);
   const stepMeta  = STEP_META.find((s) => s.step === currentStep)!;
 
@@ -134,9 +135,9 @@ export function OnboardingShell({ currentStep, completedSteps, onSaveExit, child
           </div>
         </div>
 
-        {/* Save & Exit footer */}
+        {/* Save & Exit / Skip footer */}
         <div
-          className="flex-shrink-0 flex justify-center py-4 border-t"
+          className="flex-shrink-0 flex items-center justify-between px-5 sm:px-8 py-4 border-t"
           style={{ borderColor: "rgba(255,255,255,0.06)", backgroundColor: "rgba(255,255,255,0.01)" }}
         >
           <button
@@ -148,6 +149,16 @@ export function OnboardingShell({ currentStep, completedSteps, onSaveExit, child
             onMouseLeave={(e) => { e.currentTarget.style.color = BRAND.accent; }}
           >
             Save & Exit — continue later
+          </button>
+          <button
+            type="button"
+            onClick={onSkip}
+            className="text-sm transition-colors duration-200"
+            style={{ color: BRAND.muted }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.6)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = BRAND.muted; }}
+          >
+            Skip for now →
           </button>
         </div>
       </div>
