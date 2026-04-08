@@ -2,59 +2,97 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, Loader2, Check, ChevronDown } from "lucide-react";
-import { UserRole, SignUpFormData } from "@/types/auth";
-import { ROLE_LABELS, ROLE_DESCRIPTIONS, ROLE_ICONS } from "@/lib/roles";
+import { Eye, EyeOff, Loader2, Check } from "lucide-react";
+import { SignUpFormData } from "@/types/auth";
+import { useCheckEmailMutation, useSignUpMutation } from "@/lib/api/authApi";
+
+const EMPTY_FORM: SignUpFormData = {
+  name: "",
+  lastname: "",
+  email: "",
+  organisationName: "",
+  phoneNo: "",
+  country: "UK",
+  password: "",
+  confirmPassword: "",
+};
+
+const inputCls =
+  "w-full px-5 py-3 rounded-xl bg-white/8 text-white placeholder-[#6B7280] text-sm focus:outline-none focus:ring-2 focus:ring-[#3E92CC]/50 border border-white/10 transition";
 
 const SignUp = () => {
   const router = useRouter();
   const [step, setStep] = React.useState<1 | 2>(1);
-  const [form, setForm] = React.useState<SignUpFormData>({
-    full_name: "",
-    email: "",
-    password: "",
-    confirm_password: "",
-    role: "client",
-  });
+  const [form, setForm] = React.useState<SignUpFormData>(EMPTY_FORM);
   const [showPassword, setShowPassword] = React.useState(false);
   const [showConfirm, setShowConfirm] = React.useState(false);
-  const [showRoleDropdown, setShowRoleDropdown] = React.useState(false);
   const [error, setError] = React.useState("");
-  const [loading, setLoading] = React.useState(false);
   const [agreed, setAgreed] = React.useState(false);
+
+  const [checkEmail, { isLoading: isCheckingEmail }] = useCheckEmailMutation();
+  const [signUp, { isLoading: isSigningUp }] = useSignUpMutation();
+
+  const loading = isCheckingEmail || isSigningUp;
 
   const validateEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
   const validateStep1 = () => {
-    if (!form.full_name.trim()) { setError("Please enter your full name."); return false; }
-    if (!form.email) { setError("Please enter your email."); return false; }
-    if (!validateEmail(form.email)) { setError("Please enter a valid email address."); return false; }
+    if (!form.name.trim())             { setError("Please enter your first name."); return false; }
+    if (!form.lastname.trim())         { setError("Please enter your last name."); return false; }
+    if (!form.email)                   { setError("Please enter your email."); return false; }
+    if (!validateEmail(form.email))    { setError("Please enter a valid email address."); return false; }
+    if (!form.organisationName.trim()) { setError("Please enter your organisation name."); return false; }
+    if (!form.phoneNo.trim())          { setError("Please enter your phone number."); return false; }
     return true;
   };
 
   const validateStep2 = () => {
-    if (!form.password) { setError("Please create a password."); return false; }
-    if (form.password.length < 8) { setError("Password must be at least 8 characters."); return false; }
-    if (form.password !== form.confirm_password) { setError("Passwords do not match."); return false; }
-    if (!agreed) { setError("Please agree to the Terms of Service and Privacy Policy."); return false; }
+    if (!form.password)                           { setError("Please create a password."); return false; }
+    if (form.password.length < 8)                 { setError("Password must be at least 8 characters."); return false; }
+    if (form.password !== form.confirmPassword)   { setError("Passwords do not match."); return false; }
+    if (!agreed)                                  { setError("Please agree to the Terms of Service and Privacy Policy."); return false; }
     return true;
   };
 
-  const handleNext = () => { setError(""); if (validateStep1()) setStep(2); };
+  const handleNext = async () => {
+    setError("");
+    if (!validateStep1()) return;
+
+    try {
+      await checkEmail({ email: form.email }).unwrap();
+      // If the endpoint returns success (2xx) when email is NOT taken, proceed
+      setStep(2);
+    } catch (err: unknown) {
+      // If the API returns an error it means email already exists
+      const msg =
+        (err as { data?: { message?: string } })?.data?.message ??
+        "This email is already registered. Please sign in instead.";
+      setError(msg);
+    }
+  };
 
   const handleSignUp = async () => {
     setError("");
     if (!validateStep2()) return;
-    setLoading(true);
+
     try {
-      // TODO: replace with real auth
-      // await supabase.auth.signUp({ email, password, options: { data: { full_name, role } } });
-      await new Promise((res) => setTimeout(res, 1500)); // MOCK — remove in production
+      await signUp({
+        name: form.name.trim(),
+        lastname: form.lastname.trim(),
+        email: form.email.trim(),
+        organisationName: form.organisationName.trim(),
+        password: form.password,
+        confirmPassword: form.confirmPassword,
+        phoneNo: form.phoneNo.trim(),
+        country: form.country,
+        role: 100,
+      }).unwrap();
       router.push("/onboarding");
-    } catch {
-      setError("Something went wrong. Please try again.");
-    } finally {
-      setLoading(false);
+    } catch (err: unknown) {
+      const msg =
+        (err as { data?: { message?: string } })?.data?.message ??
+        "Something went wrong. Please try again.";
+      setError(msg);
     }
   };
 
@@ -72,10 +110,9 @@ const SignUp = () => {
   const strengthLabel     = ["", "Weak",        "Fair",          "Good",          "Strong"       ];
   const strengthBarColor  = ["", "bg-red-500",   "bg-[#D4AF37]",  "bg-[#3E92CC]",  "bg-[#06D6A0]"];
   const strengthTextColor = ["", "text-red-400", "text-[#D4AF37]","text-[#3E92CC]","text-[#06D6A0]"];
-  const roles: UserRole[] = ["client", "staff", "admin"];
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-[#0A2463] to-[#0D0D0D] relative overflow-hidden w-full">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-[#0A2463] to-[#0D0D0D] relative overflow-hidden w-full py-10">
 
       {/* Ambient brand glows */}
       <div className="absolute top-1/3 right-1/4 w-[500px] h-[500px] bg-[#3E92CC]/8 rounded-full blur-3xl pointer-events-none" />
@@ -108,69 +145,62 @@ const SignUp = () => {
         {step === 1 && (
           <div className="flex flex-col w-full gap-3">
 
-            <input
-              placeholder="Full name"
-              type="text"
-              value={form.full_name}
-              autoComplete="name"
-              className="w-full px-5 py-3 rounded-xl bg-white/8 text-white placeholder-[#6B7280] text-sm focus:outline-none focus:ring-2 focus:ring-[#3E92CC]/50 border border-white/10 transition"
-              onChange={(e) => setForm({ ...form, full_name: e.target.value })}
-            />
+            <div className="flex gap-3">
+              <input
+                placeholder="First name"
+                type="text"
+                value={form.name}
+                autoComplete="given-name"
+                className={inputCls}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
+              <input
+                placeholder="Last name"
+                type="text"
+                value={form.lastname}
+                autoComplete="family-name"
+                className={inputCls}
+                onChange={(e) => setForm({ ...form, lastname: e.target.value })}
+              />
+            </div>
 
             <input
               placeholder="Email address"
               type="email"
               value={form.email}
               autoComplete="email"
-              className="w-full px-5 py-3 rounded-xl bg-white/8 text-white placeholder-[#6B7280] text-sm focus:outline-none focus:ring-2 focus:ring-[#3E92CC]/50 border border-white/10 transition"
+              className={inputCls}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
             />
 
-            {/* Role dropdown */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setShowRoleDropdown(!showRoleDropdown)}
-                className="w-full px-5 py-3 rounded-xl bg-white/8 text-white text-sm focus:outline-none focus:ring-2 focus:ring-[#3E92CC]/50 border border-white/10 transition flex items-center justify-between"
-              >
-                <span className="flex items-center gap-2">
-                  <span>{ROLE_ICONS[form.role!]}</span>
-                  <span>{ROLE_LABELS[form.role!]}</span>
-                </span>
-                <ChevronDown size={16} className={`text-[#6B7280] transition-transform ${showRoleDropdown ? "rotate-180" : ""}`} />
-              </button>
+            <input
+              placeholder="Organisation name"
+              type="text"
+              value={form.organisationName}
+              autoComplete="organization"
+              className={inputCls}
+              onChange={(e) => setForm({ ...form, organisationName: e.target.value })}
+            />
 
-              {showRoleDropdown && (
-                <div className="absolute top-full left-0 right-0 mt-1 rounded-xl bg-[#0A2463] border border-white/10 overflow-hidden z-50 shadow-2xl">
-                  {roles.map((role) => (
-                    <button
-                      key={role}
-                      type="button"
-                      onClick={() => { setForm({ ...form, role }); setShowRoleDropdown(false); }}
-                      className="w-full px-5 py-3 text-left hover:bg-white/10 transition flex items-start gap-3 border-b border-white/5 last:border-0"
-                    >
-                      <span className="text-lg mt-0.5">{ROLE_ICONS[role]}</span>
-                      <div className="flex-1">
-                        <div className="text-white text-sm font-medium flex items-center gap-2">
-                          {ROLE_LABELS[role]}
-                          {form.role === role && <Check size={14} className="text-[#D4AF37]" />}
-                        </div>
-                        <div className="text-[#6B7280] text-xs mt-0.5">{ROLE_DESCRIPTIONS[role]}</div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <input
+              placeholder="Phone number"
+              type="tel"
+              value={form.phoneNo}
+              autoComplete="tel"
+              className={inputCls}
+              onChange={(e) => setForm({ ...form, phoneNo: e.target.value })}
+            />
 
-            {/* Role warning */}
-            {form.role !== "client" && (
-              <div className="text-xs text-[#D4AF37]/80 bg-[#D4AF37]/10 px-3 py-2 rounded-lg border border-[#D4AF37]/20">
-                {form.role === "admin"
-                  ? "⚠️ Admin accounts require approval from the platform owner."
-                  : "⚠️ Staff accounts must be authorised by an admin before access is granted."}
-              </div>
-            )}
+            {/* Country */}
+            <select
+              value={form.country}
+              onChange={(e) => setForm({ ...form, country: e.target.value as "UK" | "Nigeria" })}
+              className={inputCls}
+              style={{ backgroundColor: "rgba(255,255,255,0.05)" }}
+            >
+              <option value="UK" style={{ background: "#0A2463" }}>🇬🇧 United Kingdom</option>
+              <option value="Nigeria" style={{ background: "#0A2463" }}>🇳🇬 Nigeria</option>
+            </select>
 
             {error && (
               <div className="text-sm text-red-400 bg-red-500/10 px-3 py-2 rounded-lg border border-red-500/20">
@@ -182,9 +212,12 @@ const SignUp = () => {
 
             <button
               onClick={handleNext}
-              className="w-full bg-[#D4AF37] text-[#0A2463] font-bold px-5 py-3 rounded-full shadow-lg hover:bg-[#D4AF37]/90 transition text-sm"
+              disabled={loading}
+              className="w-full bg-[#D4AF37] text-[#0A2463] font-bold px-5 py-3 rounded-full shadow-lg hover:bg-[#D4AF37]/90 transition text-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Continue →
+              {isCheckingEmail
+                ? <><Loader2 size={16} className="animate-spin" />Checking...</>
+                : "Continue →"}
             </button>
 
             <button className="w-full flex items-center justify-center gap-2 bg-gradient-to-b from-[#1a2a4a] to-[#0f1e3a] border border-white/10 rounded-full px-5 py-3 font-medium text-white shadow hover:brightness-110 transition text-sm">
@@ -208,10 +241,10 @@ const SignUp = () => {
             {/* Step 1 summary */}
             <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white/5 border border-white/10">
               <div className="w-9 h-9 rounded-full bg-[#D4AF37]/20 border border-[#D4AF37]/30 flex items-center justify-center text-[#D4AF37] text-sm font-bold flex-shrink-0">
-                {form.full_name.charAt(0).toUpperCase()}
+                {form.name.charAt(0).toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-white text-sm font-medium truncate">{form.full_name}</div>
+                <div className="text-white text-sm font-medium truncate">{form.name} {form.lastname}</div>
                 <div className="text-[#6B7280] text-xs truncate">{form.email}</div>
               </div>
               <button
@@ -228,7 +261,7 @@ const SignUp = () => {
                 type={showPassword ? "text" : "password"}
                 value={form.password}
                 autoComplete="new-password"
-                className="w-full px-5 py-3 rounded-xl bg-white/8 text-white placeholder-[#6B7280] text-sm focus:outline-none focus:ring-2 focus:ring-[#3E92CC]/50 border border-white/10 transition pr-12"
+                className={`${inputCls} pr-12`}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
               />
               <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-[#6B7280] hover:text-white transition">
@@ -254,10 +287,10 @@ const SignUp = () => {
               <input
                 placeholder="Confirm password"
                 type={showConfirm ? "text" : "password"}
-                value={form.confirm_password}
+                value={form.confirmPassword}
                 autoComplete="new-password"
-                className="w-full px-5 py-3 rounded-xl bg-white/8 text-white placeholder-[#6B7280] text-sm focus:outline-none focus:ring-2 focus:ring-[#3E92CC]/50 border border-white/10 transition pr-12"
-                onChange={(e) => setForm({ ...form, confirm_password: e.target.value })}
+                className={`${inputCls} pr-12`}
+                onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
               />
               <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-4 top-1/2 -translate-y-1/2 text-[#6B7280] hover:text-white transition">
                 {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -265,9 +298,9 @@ const SignUp = () => {
             </div>
 
             {/* Match indicator */}
-            {form.confirm_password && (
-              <div className={`text-xs flex items-center gap-1.5 ${form.password === form.confirm_password ? "text-[#06D6A0]" : "text-red-400"}`}>
-                {form.password === form.confirm_password
+            {form.confirmPassword && (
+              <div className={`text-xs flex items-center gap-1.5 ${form.password === form.confirmPassword ? "text-[#06D6A0]" : "text-red-400"}`}>
+                {form.password === form.confirmPassword
                   ? <><Check size={12} />Passwords match</>
                   : <>✗ Passwords do not match</>}
               </div>
@@ -302,7 +335,7 @@ const SignUp = () => {
               disabled={loading}
               className="w-full bg-[#D4AF37] text-[#0A2463] font-bold px-5 py-3 rounded-full shadow-lg hover:bg-[#D4AF37]/90 transition text-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading
+              {isSigningUp
                 ? <><Loader2 size={16} className="animate-spin text-[#0A2463]" />Creating account...</>
                 : "Create Account →"}
             </button>

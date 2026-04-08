@@ -3,6 +3,14 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { useSignInMutation } from "@/lib/api/authApi";
+
+function deriveRole(apiRole: unknown): { role: string; country: string; dest: string } {
+  const s = String(apiRole ?? "").toLowerCase();
+  if (s === "admin" || s === "superadmin") return { role: "admin",  country: "both",    dest: "/admin/dashboard"  };
+  if (s === "staff" || s === "accountant") return { role: "staff",  country: "both",    dest: "/staff/dashboard"  };
+  return                                          { role: "client", country: "uk",      dest: "/client/dashboard" };
+}
 
 const SignIn = () => {
   const router = useRouter();
@@ -10,32 +18,33 @@ const SignIn = () => {
   const [password, setPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
   const [error, setError] = React.useState("");
-  const [loading, setLoading] = React.useState(false);
+
+  const [signIn, { isLoading }] = useSignInMutation();
 
   const validateEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
-
-  const DEMO_ACCOUNTS: Record<string, { password: string; role: string; country: string; dest: string }> = {
-    "admin@accubridge.com":    { password: "admin123",  role: "admin",  country: "both",    dest: "/admin/dashboard"  },
-    "staff@accubridge.com":    { password: "staff123",  role: "staff",  country: "both",    dest: "/staff/dashboard"  },
-    "client@accubridge.com":   { password: "client123", role: "client", country: "uk",      dest: "/client/dashboard" },
-    "client.ng@accubridge.com":{ password: "client123", role: "client", country: "nigeria", dest: "/client/dashboard" },
-  };
 
   const handleSignIn = async () => {
     if (!email || !password) { setError("Please enter both email and password."); return; }
     if (!validateEmail(email)) { setError("Please enter a valid email address."); return; }
     setError("");
-    setLoading(true);
-    await new Promise((res) => setTimeout(res, 800));
-    const account = DEMO_ACCOUNTS[email.toLowerCase()];
-    if (account && account.password === password) {
-      document.cookie = `accubridge_role=${account.role}; path=/; max-age=86400`;
-      document.cookie = `accubridge_country=${account.country}; path=/; max-age=86400`;
-      router.push(account.dest);
-    } else {
-      setError("Invalid email or password. Please try again.");
+
+    try {
+      const data = await signIn({ email, password }).unwrap();
+      localStorage.setItem("auth_token", data.token);
+      if (data.refreshToken) localStorage.setItem("refresh_token", data.refreshToken);
+
+      const roleRaw = data.role ?? data.userRole ?? "";
+      const { role, country, dest } = deriveRole(roleRaw);
+      document.cookie = `accubridge_role=${role}; path=/; max-age=86400`;
+      document.cookie = `accubridge_country=${country}; path=/; max-age=86400`;
+      router.push(dest);
+    } catch (err: unknown) {
+      const msg =
+        (err as { data?: { message?: string } })?.data?.message ??
+        (err as { error?: string })?.error ??
+        "Invalid email or password. Please try again.";
+      setError(msg);
     }
-    setLoading(false);
   };
 
   return (
@@ -110,10 +119,10 @@ const SignIn = () => {
           <div className="flex flex-col gap-2">
             <button
               onClick={handleSignIn}
-              disabled={loading}
+              disabled={isLoading}
               className="w-full bg-[#D4AF37] text-[#0A2463] font-bold px-5 py-3 rounded-full shadow-lg hover:bg-[#D4AF37]/90 transition text-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading
+              {isLoading
                 ? <><Loader2 size={16} className="animate-spin" />Signing in...</>
                 : "Sign in"}
             </button>
@@ -133,27 +142,6 @@ const SignIn = () => {
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Demo credentials */}
-      <div className="relative z-10 mt-6 w-full max-w-sm rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-4 text-xs text-[#6B7280]">
-        <p className="font-semibold text-white/50 mb-2 uppercase tracking-wide text-[10px]">Demo credentials</p>
-        <div className="flex flex-col gap-1.5">
-          {[
-            { label: "Admin",      email: "admin@accubridge.com",    pw: "admin123",  color: "#D4AF37" },
-            { label: "Staff",      email: "staff@accubridge.com",    pw: "staff123",  color: "#3E92CC" },
-            { label: "Client (UK)",email: "client@accubridge.com",   pw: "client123", color: "#06D6A0" },
-            { label: "Client (NG)",email: "client.ng@accubridge.com",pw: "client123", color: "#F4A261" },
-          ].map((a) => (
-            <button key={a.label} type="button"
-              onClick={() => { setEmail(a.email); setPassword(a.pw); setError(""); }}
-              className="flex items-center justify-between w-full hover:bg-white/5 rounded-lg px-2 py-1 transition text-left">
-              <span className="font-medium" style={{ color: a.color }}>{a.label}</span>
-              <span>{a.email}</span>
-            </button>
-          ))}
-        </div>
-        <p className="mt-2 text-[10px] text-white/20">Click a row to autofill, then press Sign in.</p>
       </div>
 
       {/* Social proof */}

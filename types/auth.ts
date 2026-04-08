@@ -11,11 +11,14 @@ export interface AuthUser {
 }
 
 export interface SignUpFormData {
-  full_name: string;
+  name: string;
+  lastname: string;
   email: string;
+  organisationName: string;
+  phoneNo: string;
+  country: "UK" | "Nigeria";
   password: string;
-  confirm_password: string;
-  role?: UserRole;
+  confirmPassword: string;
 }
 
 export interface SignInFormData {
