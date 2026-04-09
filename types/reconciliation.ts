@@ -1,18 +1,16 @@
-export type ReconciliationStatus = "matched" | "unmatched" | "flagged";
+// Re-exported from the API layer for convenience in component imports
+export type {
+  ApiReconciliationLine,
+  ReconciliationDetail,
+  ReconciliationListItem,
+  ReconciliationsListResponse,
+  ReconciliationSummary,
+  MatchCandidate,
+} from "@/lib/api/reconciliationApi";
 
-export interface BankStatementLine {
-  id: string;
-  date: string;
-  description: string;
-  amount: number;           // positive = credit, negative = debit
-  rawType: "credit" | "debit";
-  status: ReconciliationStatus;
-  matchedTransactionId?: string;
-  matchedTransactionLabel?: string;
-  confidence?: number;      // 0–100 auto-match confidence score
-  flagReason?: string;
-}
+// ─── Frontend display types ───────────────────────────────────────────────────
 
+/** Derived stats shown in the stats cards and gauge */
 export interface ReconciliationStats {
   total: number;
   matched: number;
@@ -20,14 +18,4 @@ export interface ReconciliationStats {
   flagged: number;
   matchedAmount: number;
   unmatchedAmount: number;
-}
-
-export interface InternalTransaction {
-  id: string;
-  date: string;
-  type: "income" | "expense";
-  category: string;
-  description: string;
-  amount: number;
-  status: "pending" | "reconciled" | "unreconciled";
 }

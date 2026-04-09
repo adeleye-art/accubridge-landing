@@ -28,6 +28,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { useSidebar } from "./sidebar-provider";
+import { useSignOutMutation } from "@/lib/api/authApi";
 
 // ─── Brand constants ──────────────────────────────────────────────────────────
 const BRAND = {
@@ -491,6 +492,21 @@ function NavSections({
 
 // ─── User footer (shared) ─────────────────────────────────────────────────────
 function UserFooter() {
+  const router = useRouter();
+  const [signOut, { isLoading }] = useSignOutMutation();
+
+  const handleLogout = async () => {
+    try {
+      await signOut().unwrap();
+    } finally {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("auth_token");
+        localStorage.removeItem("refresh_token");
+      }
+      router.push("/signin");
+    }
+  };
+
   return (
     <div
       className="flex-shrink-0 mx-3 mb-4 mt-2 p-3 rounded-xl border flex items-center gap-3"
@@ -508,7 +524,9 @@ function UserFooter() {
       </div>
       <button
         type="button"
-        className="flex-shrink-0 p-1.5 rounded-lg transition-colors duration-200 hover:bg-white/10"
+        onClick={handleLogout}
+        disabled={isLoading}
+        className="flex-shrink-0 p-1.5 rounded-lg transition-colors duration-200 hover:bg-white/10 disabled:opacity-50"
         aria-label="Logout"
       >
         <LogOut size={14} style={{ color: BRAND.muted }} />

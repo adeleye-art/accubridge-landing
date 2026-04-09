@@ -6,11 +6,11 @@ import { AlertTriangle, X } from "lucide-react";
 interface ConfirmDialogProps {
   open: boolean;
   title: string;
-  description?: string;
+  description?: React.ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
   variant?: "danger" | "warning" | "default";
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
   onCancel: () => void;
 }
 
@@ -72,9 +72,9 @@ export function ConfirmDialog({
 
         <h2 className="text-white font-bold text-lg mb-2">{title}</h2>
         {description && (
-          <p className="text-sm mb-6" style={{ color: "#6B7280", lineHeight: "1.6" }}>
+          <div className="text-sm mb-6" style={{ color: "#6B7280", lineHeight: "1.6" }}>
             {description}
-          </p>
+          </div>
         )}
 
         <div className="flex gap-3 justify-end">

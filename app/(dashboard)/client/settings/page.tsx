@@ -16,7 +16,6 @@ import {
   SettingsSection,
   ProfileSettings,
   NotificationSettings,
-  ActiveSession,
   SubscriptionInfo,
 } from "@/types/settings";
 
@@ -60,32 +59,6 @@ const MOCK_NOTIFICATIONS: NotificationSettings = {
   inapp_funding: true,
 };
 
-const MOCK_SESSIONS: ActiveSession[] = [
-  {
-    id: "s1",
-    device: "MacBook Pro",
-    browser: "Chrome 123",
-    location: "London, UK",
-    last_active: "Now",
-    is_current: true,
-  },
-  {
-    id: "s2",
-    device: "iPhone 15",
-    browser: "Safari Mobile",
-    location: "London, UK",
-    last_active: "2 hours ago",
-    is_current: false,
-  },
-  {
-    id: "s3",
-    device: "Windows PC",
-    browser: "Firefox 124",
-    location: "Lagos, Nigeria",
-    last_active: "3 days ago",
-    is_current: false,
-  },
-];
 
 const MOCK_SUBSCRIPTION: SubscriptionInfo = {
   plan: "standard",
@@ -136,12 +109,11 @@ export default function SettingsPage() {
   const [business, setBusiness] = useState<BusinessData>(MOCK_BUSINESS);
   const [notifications, setNotifs] =
     useState<NotificationSettings>(MOCK_NOTIFICATIONS);
-  const [sessions, setSessions] = useState<ActiveSession[]>(MOCK_SESSIONS);
 
   // Original snapshots for dirty detection
-  const [origProfile] = useState(MOCK_PROFILE);
-  const [origBusiness] = useState(MOCK_BUSINESS);
-  const [origNotifs] = useState(MOCK_NOTIFICATIONS);
+  const [origProfile] = useState<ProfileSettings>(MOCK_PROFILE);
+  const [origBusiness] = useState<BusinessData>(MOCK_BUSINESS);
+  const [origNotifs] = useState<NotificationSettings>(MOCK_NOTIFICATIONS);
 
   // UI state
   const [isSaving, setIsSaving] = useState(false);
@@ -183,21 +155,6 @@ export default function SettingsPage() {
     },
     []
   );
-
-  const handleRevokeSession = async (id: string) => {
-    await new Promise((res) => setTimeout(res, 600));
-    setSessions((prev) => prev.filter((s) => s.id !== id));
-    setToast({ message: "Device signed out successfully", type: "success" });
-  };
-
-  const handleRevokeAll = async () => {
-    await new Promise((res) => setTimeout(res, 800));
-    setSessions((prev) => prev.filter((s) => s.is_current));
-    setToast({
-      message: "All other devices have been signed out",
-      type: "success",
-    });
-  };
 
   const meta = SECTION_META[activeSection];
   const showSaveBar = ["profile", "business", "notifications"].includes(
@@ -261,13 +218,7 @@ export default function SettingsPage() {
             {activeSection === "subscription" && (
               <SubscriptionSection subscription={MOCK_SUBSCRIPTION} />
             )}
-            {activeSection === "security" && (
-              <SecuritySection
-                sessions={sessions}
-                onRevokeSession={handleRevokeSession}
-                onRevokeAll={handleRevokeAll}
-              />
-            )}
+            {activeSection === "security" && <SecuritySection />}
 
             {/* Sticky save bar */}
             {showSaveBar && (

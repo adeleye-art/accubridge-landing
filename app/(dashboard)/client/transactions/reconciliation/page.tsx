@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import { useRouter } from "next/navigation";
-import { useCurrency } from "@/lib/currency-context";
 import {
   Plus,
   CheckCircle2,
@@ -12,127 +11,68 @@ import {
   FileText,
   BarChart2,
   Lock,
+  Loader2,
 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
+import { useGetReconciliationsQuery } from "@/lib/api/reconciliationApi";
+import type { ReconciliationListItem } from "@/lib/api/reconciliationApi";
 
-const BRAND = { primary: "#0A2463", gold: "#D4AF37", green: "#06D6A0", accent: "#3E92CC", muted: "#6B7280", red: "#ef4444" };
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type ReconcileStatus = "complete" | "in-progress" | "pending";
-
-interface ReconciliationRun {
-  id: string;
-  period: string;          // e.g. "March 2026"
-  uploadedAt: string;      // display date
-  bank: string;            // bank name
-  fileName: string;
-  totalLines: number;
-  matched: number;
-  unmatched: number;
-  flagged: number;
-  totalAmount: number;     // total £ across all lines
-  status: ReconcileStatus;
-}
-
-// ─── Mock history ─────────────────────────────────────────────────────────────
-
-const MOCK_RUNS: ReconciliationRun[] = [
-  {
-    id: "r1",
-    period: "March 2026",
-    uploadedAt: "28 Mar 2026",
-    bank: "Barclays Business",
-    fileName: "march_2026_barclays.csv",
-    totalLines: 12,
-    matched: 10,
-    unmatched: 0,
-    flagged: 2,
-    totalAmount: 18878.99,
-    status: "in-progress",
-  },
-  {
-    id: "r2",
-    period: "February 2026",
-    uploadedAt: "02 Mar 2026",
-    bank: "Barclays Business",
-    fileName: "feb_2026_barclays.csv",
-    totalLines: 9,
-    matched: 9,
-    unmatched: 0,
-    flagged: 0,
-    totalAmount: 14320.00,
-    status: "complete",
-  },
-  {
-    id: "r3",
-    period: "January 2026",
-    uploadedAt: "01 Feb 2026",
-    bank: "HSBC UK",
-    fileName: "jan_2026_hsbc.csv",
-    totalLines: 11,
-    matched: 11,
-    unmatched: 0,
-    flagged: 0,
-    totalAmount: 22150.50,
-    status: "complete",
-  },
-  {
-    id: "r4",
-    period: "December 2025",
-    uploadedAt: "03 Jan 2026",
-    bank: "HSBC UK",
-    fileName: "dec_2025_hsbc.csv",
-    totalLines: 14,
-    matched: 14,
-    unmatched: 0,
-    flagged: 0,
-    totalAmount: 31400.00,
-    status: "complete",
-  },
-  {
-    id: "r5",
-    period: "November 2025",
-    uploadedAt: "01 Dec 2025",
-    bank: "Barclays Business",
-    fileName: "nov_2025_barclays.csv",
-    totalLines: 8,
-    matched: 6,
-    unmatched: 1,
-    flagged: 1,
-    totalAmount: 9870.00,
-    status: "pending",
-  },
-];
+const BRAND = {
+  primary: "#0A2463",
+  gold: "#D4AF37",
+  green: "#06D6A0",
+  accent: "#3E92CC",
+  muted: "#6B7280",
+  red: "#ef4444",
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// fmtAmount is provided via useCurrency() inside the component
+/** Map the API status int/label to our 3 display states */
+function resolveStatus(item: ReconciliationListItem): "complete" | "in-progress" | "needs-review" {
+  const label = item.statusLabel?.toLowerCase() ?? "";
+  if (label.includes("complete")) return "complete";
+  if (label.includes("review") || label.includes("needs")) return "needs-review";
+  return "in-progress";
+}
 
-// ─── Status badge ──────────────────────────────────────────────────────────────
+function formatDate(iso: string) {
+  try {
+    return new Date(iso).toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return iso;
+  }
+}
 
-function StatusBadge({ status }: { status: ReconcileStatus }) {
-  const cfg = {
-    complete:    { label: "Complete",    color: BRAND.green, bg: `${BRAND.green}15`,    border: `${BRAND.green}30`,    icon: <CheckCircle2 size={11} /> },
-    "in-progress":{ label: "In Progress", color: BRAND.gold,  bg: `${BRAND.gold}15`,    border: `${BRAND.gold}30`,     icon: <Clock size={11} /> },
-    pending:     { label: "Pending",     color: BRAND.red,   bg: "rgba(239,68,68,0.12)", border: "rgba(239,68,68,0.25)", icon: <AlertOctagon size={11} /> },
-  }[status];
+// ─── Status badge ─────────────────────────────────────────────────────────────
 
+type DisplayStatus = "complete" | "in-progress" | "needs-review";
+
+function StatusBadge({ status }: { status: DisplayStatus }) {
+  const cfg: Record<DisplayStatus, { label: string; color: string; bg: string; border: string; icon: React.ReactNode }> = {
+    complete:      { label: "Complete",      color: BRAND.green, bg: `${BRAND.green}15`,     border: `${BRAND.green}30`,      icon: <CheckCircle2 size={11} /> },
+    "in-progress": { label: "In Progress",   color: BRAND.gold,  bg: `${BRAND.gold}15`,      border: `${BRAND.gold}30`,       icon: <Clock size={11} /> },
+    "needs-review":{ label: "Needs Review",  color: BRAND.red,   bg: "rgba(239,68,68,0.12)", border: "rgba(239,68,68,0.25)",  icon: <AlertOctagon size={11} /> },
+  };
+  const c = cfg[status];
   return (
     <span
       className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border flex-shrink-0"
-      style={{ backgroundColor: cfg.bg, color: cfg.color, borderColor: cfg.border }}
+      style={{ backgroundColor: c.bg, color: c.color, borderColor: c.border }}
     >
-      {cfg.icon}
-      {cfg.label}
+      {c.icon}
+      {c.label}
     </span>
   );
 }
 
-// ─── Mini match bar ───────────────────────────────────────────────────────────
+// ─── Match bar ────────────────────────────────────────────────────────────────
 
-function MatchBar({ matched, total }: { matched: number; total: number }) {
-  const pct = total > 0 ? Math.round((matched / total) * 100) : 0;
+function MatchBar({ pct }: { pct: number }) {
   return (
     <div className="flex items-center gap-2">
       <div
@@ -147,24 +87,31 @@ function MatchBar({ matched, total }: { matched: number; total: number }) {
           }}
         />
       </div>
-      <span className="text-[11px] font-semibold flex-shrink-0" style={{ color: pct === 100 ? BRAND.green : BRAND.muted }}>
+      <span
+        className="text-[11px] font-semibold flex-shrink-0"
+        style={{ color: pct === 100 ? BRAND.green : BRAND.muted }}
+      >
         {pct}%
       </span>
     </div>
   );
 }
 
-// ─── Summary stats (top of page) ──────────────────────────────────────────────
+// ─── Summary cards ────────────────────────────────────────────────────────────
 
-function SummaryStats({ runs }: { runs: ReconciliationRun[] }) {
-  const complete   = runs.filter((r) => r.status === "complete").length;
-  const inProgress = runs.filter((r) => r.status === "in-progress").length;
-  const pending    = runs.filter((r) => r.status === "pending").length;
-
+function SummaryCards({
+  complete,
+  inProgress,
+  needsReview,
+}: {
+  complete: number;
+  inProgress: number;
+  needsReview: number;
+}) {
   const cards = [
-    { label: "Complete",     value: complete,   color: BRAND.green, bg: `${BRAND.green}15`,     border: `${BRAND.green}20`,     icon: <CheckCircle2 size={18} /> },
-    { label: "In Progress",  value: inProgress, color: BRAND.gold,  bg: `${BRAND.gold}15`,      border: `${BRAND.gold}20`,      icon: <Clock size={18} /> },
-    { label: "Needs Review", value: pending,    color: BRAND.red,   bg: "rgba(239,68,68,0.12)", border: "rgba(239,68,68,0.18)", icon: <AlertOctagon size={18} /> },
+    { label: "Complete",     value: complete,    color: BRAND.green, bg: `${BRAND.green}15`,     border: `${BRAND.green}20`,     icon: <CheckCircle2 size={18} /> },
+    { label: "In Progress",  value: inProgress,  color: BRAND.gold,  bg: `${BRAND.gold}15`,      border: `${BRAND.gold}20`,      icon: <Clock size={18} /> },
+    { label: "Needs Review", value: needsReview, color: BRAND.red,   bg: "rgba(239,68,68,0.12)", border: "rgba(239,68,68,0.18)", icon: <AlertOctagon size={18} /> },
   ];
 
   return (
@@ -194,14 +141,14 @@ function SummaryStats({ runs }: { runs: ReconciliationRun[] }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ReconciliationHistoryPage() {
-  const { fmt: fmtAmount } = useCurrency();
   const router = useRouter();
-  const [runs] = useState<ReconciliationRun[]>(MOCK_RUNS);
+  const { data, isLoading, isError } = useGetReconciliationsQuery();
 
-  function openRun(run: ReconciliationRun) {
-    // In production: router.push(`/client/transactions/reconciliation/${run.id}`)
-    // For now, all rows go to the new/matching screen
-    router.push("/client/transactions/reconciliation/new");
+  const runs = data?.reconciliations ?? [];
+  const summary = data?.summary;
+
+  function openRun(id: number) {
+    router.push(`/client/transactions/reconciliation/${id}`);
   }
 
   return (
@@ -237,7 +184,11 @@ export default function ReconciliationHistoryPage() {
         />
 
         {/* Summary stats */}
-        <SummaryStats runs={runs} />
+        <SummaryCards
+          complete={summary?.complete ?? 0}
+          inProgress={summary?.inProgress ?? 0}
+          needsReview={summary?.needsReview ?? 0}
+        />
 
         {/* History list */}
         <div
@@ -248,12 +199,12 @@ export default function ReconciliationHistoryPage() {
           <div
             className="grid px-5 py-3 border-b"
             style={{
-              gridTemplateColumns: "1fr 130px 130px 130px 120px 36px",
+              gridTemplateColumns: "1fr 130px 130px 120px 36px",
               borderColor: "rgba(255,255,255,0.07)",
               backgroundColor: "rgba(255,255,255,0.04)",
             }}
           >
-            {["Period", "Bank", "Lines", "Amount", "Status", ""].map((h) => (
+            {["Period", "Bank", "Lines", "Status", ""].map((h) => (
               <span
                 key={h}
                 className="text-[11px] font-semibold uppercase tracking-widest"
@@ -264,8 +215,26 @@ export default function ReconciliationHistoryPage() {
             ))}
           </div>
 
-          {/* Rows */}
-          {runs.length === 0 ? (
+          {/* Loading */}
+          {isLoading && (
+            <div className="flex items-center justify-center py-16 gap-3">
+              <Loader2 size={20} className="animate-spin" style={{ color: BRAND.muted }} />
+              <span className="text-sm" style={{ color: BRAND.muted }}>Loading reconciliations…</span>
+            </div>
+          )}
+
+          {/* Error */}
+          {isError && !isLoading && (
+            <div className="flex flex-col items-center gap-2 py-16 text-center px-6">
+              <AlertOctagon size={24} style={{ color: BRAND.red }} />
+              <p className="text-sm" style={{ color: BRAND.muted }}>
+                Failed to load reconciliations. Please try again.
+              </p>
+            </div>
+          )}
+
+          {/* Empty */}
+          {!isLoading && !isError && runs.length === 0 && (
             <div className="flex flex-col items-center gap-3 py-16 text-center px-6">
               <div
                 className="w-14 h-14 rounded-2xl flex items-center justify-center"
@@ -301,24 +270,29 @@ export default function ReconciliationHistoryPage() {
                 New Reconciliation
               </button>
             </div>
-          ) : (
-            runs.map((run, i) => (
+          )}
+
+          {/* Rows */}
+          {!isLoading && !isError && runs.map((run, i) => {
+            const displayStatus = resolveStatus(run);
+            const borderColor =
+              displayStatus === "complete" ? BRAND.green
+              : displayStatus === "needs-review" ? BRAND.red
+              : BRAND.gold;
+
+            return (
               <button
                 key={run.id}
                 type="button"
-                onClick={() => openRun(run)}
+                onClick={() => openRun(run.id)}
                 className="w-full text-left transition-colors duration-150 hover:bg-white/[0.025]"
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1fr 130px 130px 130px 120px 36px",
+                  gridTemplateColumns: "1fr 130px 130px 120px 36px",
                   alignItems: "center",
                   padding: "16px 20px",
                   borderBottom: i < runs.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none",
-                  borderLeft: `3px solid ${
-                    run.status === "complete" ? BRAND.green
-                    : run.status === "in-progress" ? BRAND.gold
-                    : BRAND.red
-                  }`,
+                  borderLeft: `3px solid ${borderColor}`,
                 }}
               >
                 {/* Period + meta */}
@@ -327,11 +301,11 @@ export default function ReconciliationHistoryPage() {
                     <div
                       className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
                       style={{
-                        backgroundColor: run.status === "complete" ? `${BRAND.green}12` : "rgba(255,255,255,0.06)",
-                        border: `1px solid ${run.status === "complete" ? `${BRAND.green}25` : "rgba(255,255,255,0.09)"}`,
+                        backgroundColor: displayStatus === "complete" ? `${BRAND.green}12` : "rgba(255,255,255,0.06)",
+                        border: `1px solid ${displayStatus === "complete" ? `${BRAND.green}25` : "rgba(255,255,255,0.09)"}`,
                       }}
                     >
-                      {run.status === "complete"
+                      {displayStatus === "complete"
                         ? <Lock size={12} style={{ color: BRAND.green }} />
                         : <FileText size={12} style={{ color: BRAND.muted }} />
                       }
@@ -341,41 +315,36 @@ export default function ReconciliationHistoryPage() {
                   <div className="flex items-center gap-2 pl-9">
                     <span className="text-[11px]" style={{ color: BRAND.muted }}>{run.fileName}</span>
                     <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.2)" }}>·</span>
-                    <span className="text-[11px]" style={{ color: BRAND.muted }}>{run.uploadedAt}</span>
+                    <span className="text-[11px]" style={{ color: BRAND.muted }}>{formatDate(run.createdAt)}</span>
                   </div>
                   <div className="pl-9">
-                    <MatchBar matched={run.matched} total={run.totalLines} />
+                    <MatchBar pct={run.progressPercentage} />
                   </div>
                 </div>
 
                 {/* Bank */}
                 <span className="text-xs truncate pr-2" style={{ color: "rgba(255,255,255,0.65)" }}>
-                  {run.bank}
+                  {run.bankName}
                 </span>
 
                 {/* Lines */}
                 <div className="flex flex-col gap-0.5">
                   <span className="text-sm font-semibold text-white">{run.totalLines} lines</span>
                   <span className="text-[11px]" style={{ color: BRAND.muted }}>
-                    {run.matched}M · {run.unmatched}U · {run.flagged}F
+                    {run.matchedCount}M · {run.totalLines - run.matchedCount}U
                   </span>
                 </div>
 
-                {/* Amount */}
-                <span className="text-sm font-semibold" style={{ color: "rgba(255,255,255,0.85)" }}>
-                  {fmtAmount(run.totalAmount)}
-                </span>
-
                 {/* Status */}
-                <StatusBadge status={run.status} />
+                <StatusBadge status={displayStatus} />
 
                 {/* Arrow */}
                 <div className="flex items-center justify-center">
                   <ArrowRight size={14} style={{ color: BRAND.muted }} />
                 </div>
               </button>
-            ))
-          )}
+            );
+          })}
         </div>
 
         {/* Legend */}
@@ -383,7 +352,6 @@ export default function ReconciliationHistoryPage() {
           {[
             { label: "M = Matched",   color: BRAND.green },
             { label: "U = Unmatched", color: BRAND.gold  },
-            { label: "F = Flagged",   color: BRAND.red   },
           ].map((l) => (
             <span key={l.label} className="text-[11px]" style={{ color: l.color }}>
               {l.label}

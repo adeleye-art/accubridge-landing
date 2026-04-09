@@ -1,18 +1,23 @@
 "use client";
 
 import React, { useState } from "react";
-import { CheckCircle2, AlertOctagon, Clock, CheckCheck, Plus, Info } from "lucide-react";
-import type { BankStatementLine, InternalTransaction } from "@/types/reconciliation";
+import { CheckCircle2, AlertOctagon, Clock, CheckCheck, Plus, Info, Loader2 } from "lucide-react";
+import {
+  useGetCandidatesQuery,
+  useMatchLineMutation,
+  useFlagLineMutation,
+} from "@/lib/api/reconciliationApi";
+import type { ApiReconciliationLine, MatchCandidate } from "@/lib/api/reconciliationApi";
 
 const BRAND = { primary: "#0A2463", accent: "#3E92CC", gold: "#D4AF37", green: "#06D6A0", muted: "#6B7280" };
 
 // ─── Status badge ──────────────────────────────────────────────────────────────
 
-function StatusBadge({ status }: { status: BankStatementLine["status"] }) {
+function StatusBadge({ status }: { status: ApiReconciliationLine["matchStatus"] }) {
   const cfg = {
-    matched:   { bg: `${BRAND.green}15`,      color: BRAND.green, border: `${BRAND.green}30`,      label: "Matched",   icon: <CheckCircle2 size={11} /> },
-    unmatched: { bg: `${BRAND.gold}15`,        color: BRAND.gold,  border: `${BRAND.gold}30`,       label: "Unmatched", icon: <Clock size={11} /> },
-    flagged:   { bg: "rgba(239,68,68,0.12)",   color: "#ef4444",   border: "rgba(239,68,68,0.25)",  label: "Flagged",   icon: <AlertOctagon size={11} /> },
+    Matched:   { bg: `${BRAND.green}15`,      color: BRAND.green, border: `${BRAND.green}30`,      label: "Matched",   icon: <CheckCircle2 size={11} /> },
+    Unmatched: { bg: `${BRAND.gold}15`,        color: BRAND.gold,  border: `${BRAND.gold}30`,       label: "Unmatched", icon: <Clock size={11} /> },
+    Flagged:   { bg: "rgba(239,68,68,0.12)",   color: "#ef4444",   border: "rgba(239,68,68,0.25)",  label: "Flagged",   icon: <AlertOctagon size={11} /> },
   }[status];
 
   return (
@@ -28,11 +33,10 @@ function StatusBadge({ status }: { status: BankStatementLine["status"] }) {
 
 // ─── Amount cell ───────────────────────────────────────────────────────────────
 
-function AmountCell({ amount, rawType }: { amount: number; rawType: "credit" | "debit" }) {
-  const isCredit = rawType === "credit";
+function AmountCell({ amount, isIncome }: { amount: number; isIncome: boolean }) {
   return (
-    <span className="font-semibold text-sm tabular-nums" style={{ color: isCredit ? BRAND.green : "#ef4444" }}>
-      {isCredit ? "+" : "−"}£{Math.abs(amount).toFixed(2)}
+    <span className="font-semibold text-sm tabular-nums" style={{ color: isIncome ? BRAND.green : "#ef4444" }}>
+      {isIncome ? "+" : "−"}£{Math.abs(amount).toFixed(2)}
     </span>
   );
 }
@@ -46,7 +50,7 @@ function ConfidencePill({ score }: { score: number }) {
       className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
       style={{ backgroundColor: `${color}15`, color }}
     >
-      {score}% match
+      {Math.round(score)}% match
     </span>
   );
 }
@@ -55,82 +59,89 @@ function ConfidencePill({ score }: { score: number }) {
 
 function MatchActionCell({
   line,
-  availableTxs,
-  selectedMatch,
-  onSelectMatch,
-  onMatch,
-  onFlag,
-  onUnmatch,
+  reconciliationId,
   onAddAsNew,
 }: {
-  line: BankStatementLine;
-  availableTxs: InternalTransaction[];
-  selectedMatch: string;
-  onSelectMatch: (id: string) => void;
-  onMatch: () => void;
-  onFlag: () => void;
-  onUnmatch: () => void;
+  line: ApiReconciliationLine;
+  reconciliationId: number;
   onAddAsNew: () => void;
 }) {
-  if (line.status === "matched") {
+  const [fetchCandidates, setFetchCandidates] = useState(false);
+  const [selectedTxId, setSelectedTxId] = useState("");
+
+  const { data: candidates, isFetching } = useGetCandidatesQuery(
+    { id: reconciliationId, lineId: line.id },
+    { skip: !fetchCandidates || line.matchStatus === "Matched" }
+  );
+
+  const [matchLine, { isLoading: isMatching }] = useMatchLineMutation();
+  const [flagLine, { isLoading: isFlagging }] = useFlagLineMutation();
+
+  if (line.matchStatus === "Matched") {
     return (
       <div className="flex items-center justify-end gap-2">
         <div className="flex items-center gap-1.5">
           <CheckCheck size={14} style={{ color: BRAND.green }} />
-          <span
-            className="text-xs truncate max-w-[180px]"
-            style={{ color: "rgba(255,255,255,0.7)" }}
-          >
-            {line.matchedTransactionLabel}
+          <span className="text-xs truncate max-w-[180px]" style={{ color: "rgba(255,255,255,0.7)" }}>
+            Matched
           </span>
         </div>
-        <button
-          type="button"
-          onClick={onUnmatch}
-          className="px-2.5 h-7 rounded-lg text-xs font-medium border transition-colors flex-shrink-0"
-          style={{ borderColor: `${BRAND.gold}40`, color: BRAND.gold, backgroundColor: `${BRAND.gold}10` }}
-          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${BRAND.gold}22`; }}
-          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = `${BRAND.gold}10`; }}
-        >
-          Unmatch
-        </button>
       </div>
     );
   }
 
+  async function handleMatch() {
+    if (!selectedTxId) return;
+    await matchLine({ id: reconciliationId, lineId: line.id, transactionId: Number(selectedTxId) });
+    setSelectedTxId("");
+  }
+
+  async function handleFlag() {
+    await flagLine({ id: reconciliationId, lineId: line.id });
+  }
+
+  const renderCandidateOptions = () => {
+    if (isFetching) {
+      return <option disabled style={{ backgroundColor: "#0f1e3a" }}>Loading candidates…</option>;
+    }
+    if (!candidates || candidates.length === 0) {
+      return <option disabled style={{ backgroundColor: "#0f1e3a" }}>No candidates found</option>;
+    }
+    return candidates.map((c: MatchCandidate) => (
+      <option key={c.transactionId} value={String(c.transactionId)} style={{ backgroundColor: "#0f1e3a" }}>
+        {c.date} — {c.description} (£{c.amount.toFixed(2)}) {c.confidenceScore > 0 ? `· ${Math.round(c.confidenceScore)}%` : ""}
+      </option>
+    ));
+  };
+
   return (
     <div className="flex flex-col gap-1.5 items-end">
-      {/* Dropdown */}
+      {/* Candidates dropdown */}
       <select
-        value={selectedMatch}
-        onChange={(e) => onSelectMatch(e.target.value)}
+        value={selectedTxId}
+        onChange={(e) => setSelectedTxId(e.target.value)}
+        onFocus={() => setFetchCandidates(true)}
         className="w-full h-8 px-2 rounded-lg text-xs border outline-none"
         style={{
           backgroundColor: "rgba(255,255,255,0.07)",
           borderColor: "rgba(255,255,255,0.12)",
-          color: selectedMatch ? "#fff" : BRAND.muted,
+          color: selectedTxId ? "#fff" : BRAND.muted,
           appearance: "none",
           colorScheme: "dark",
         }}
-        onFocus={(e) => { e.target.style.borderColor = `${BRAND.accent}60`; }}
-        onBlur={(e) => { e.target.style.borderColor = "rgba(255,255,255,0.12)"; }}
       >
-        <option value="" style={{ backgroundColor: "#0f1e3a" }}>Select a transaction to match…</option>
-        {availableTxs.map((tx) => (
-          <option key={tx.id} value={tx.id} style={{ backgroundColor: "#0f1e3a" }}>
-            {tx.date} — {tx.description} (£{tx.amount.toFixed(2)})
-          </option>
-        ))}
+        <option value="" style={{ backgroundColor: "#0f1e3a" }}>
+          {fetchCandidates ? "Select a transaction to match…" : "Click to load candidates…"}
+        </option>
+        {fetchCandidates && renderCandidateOptions()}
       </select>
 
       {/* Action buttons */}
       <div className="flex items-center gap-1.5">
-        {line.status === "flagged" && line.flagReason && (
-          <div className="flex items-center gap-1 mr-1" title={line.flagReason}>
+        {line.matchStatus === "Flagged" && (
+          <div className="flex items-center gap-1 mr-1">
             <Info size={12} style={{ color: "#ef4444" }} />
-            <span className="text-[10px] max-w-[110px] truncate" style={{ color: "#ef4444" }}>
-              {line.flagReason}
-            </span>
+            <span className="text-[10px]" style={{ color: "#ef4444" }}>Flagged for review</span>
           </div>
         )}
 
@@ -149,32 +160,33 @@ function MatchActionCell({
 
         <button
           type="button"
-          onClick={onFlag}
+          onClick={handleFlag}
+          disabled={isFlagging}
           className="px-3 h-7 rounded-lg text-xs font-bold transition-colors"
           style={{
-            backgroundColor: line.status === "flagged" ? "rgba(239,68,68,0.25)" : "rgba(239,68,68,0.12)",
+            backgroundColor: line.matchStatus === "Flagged" ? "rgba(239,68,68,0.25)" : "rgba(239,68,68,0.12)",
             color: "#ef4444",
           }}
           onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "rgba(239,68,68,0.28)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = line.status === "flagged" ? "rgba(239,68,68,0.25)" : "rgba(239,68,68,0.12)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = line.matchStatus === "Flagged" ? "rgba(239,68,68,0.25)" : "rgba(239,68,68,0.12)"; }}
         >
-          Flag
+          {isFlagging ? <Loader2 size={10} className="animate-spin inline" /> : "Flag"}
         </button>
 
         <button
           type="button"
-          onClick={onMatch}
-          disabled={!selectedMatch}
+          onClick={handleMatch}
+          disabled={!selectedTxId || isMatching}
           className="px-3 h-7 rounded-lg text-xs font-bold transition-colors"
           style={{
-            backgroundColor: selectedMatch ? BRAND.green : `${BRAND.green}30`,
-            color: selectedMatch ? BRAND.primary : `${BRAND.green}60`,
-            cursor: selectedMatch ? "pointer" : "not-allowed",
+            backgroundColor: selectedTxId ? BRAND.green : `${BRAND.green}30`,
+            color: selectedTxId ? BRAND.primary : `${BRAND.green}60`,
+            cursor: selectedTxId ? "pointer" : "not-allowed",
           }}
-          onMouseEnter={(e) => { if (selectedMatch) e.currentTarget.style.backgroundColor = "#05c190"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = selectedMatch ? BRAND.green : `${BRAND.green}30`; }}
+          onMouseEnter={(e) => { if (selectedTxId) e.currentTarget.style.backgroundColor = "#05c190"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = selectedTxId ? BRAND.green : `${BRAND.green}30`; }}
         >
-          Match
+          {isMatching ? <Loader2 size={10} className="animate-spin inline" /> : "Match"}
         </button>
       </div>
     </div>
@@ -186,12 +198,9 @@ function MatchActionCell({
 type FilterKey = "all" | "unmatched" | "matched" | "flagged";
 
 interface Props {
-  lines: BankStatementLine[];
-  internalTransactions: InternalTransaction[];
-  onMatch: (lineId: string, txId: string) => void;
-  onUnmatch: (lineId: string) => void;
-  onFlag: (lineId: string) => void;
-  onAddAsNew: (line: BankStatementLine) => void;
+  lines: ApiReconciliationLine[];
+  reconciliationId: number;
+  onAddAsNew: (line: ApiReconciliationLine) => void;
   activeFilter: FilterKey;
   onFilterChange: (f: FilterKey) => void;
 }
@@ -200,29 +209,26 @@ const PAGE_SIZE = 8;
 
 export function ReconciliationTable({
   lines,
-  internalTransactions,
-  onMatch,
-  onUnmatch,
-  onFlag,
+  reconciliationId,
   onAddAsNew,
   activeFilter,
   onFilterChange,
 }: Props) {
-  const [selectedMatches, setSelectedMatches] = useState<Record<string, string>>({});
   const [currentPage, setCurrentPage] = useState(1);
 
-  const filtered = lines.filter((l) => activeFilter === "all" ? true : l.status === activeFilter);
+  const filtered = lines.filter((l) => {
+    if (activeFilter === "all") return true;
+    return l.matchStatus.toLowerCase() === activeFilter;
+  });
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   const TABS: { key: FilterKey; label: string; color: string }[] = [
-    { key: "all",       label: `All (${lines.length})`,                                          color: "rgba(255,255,255,0.7)" },
-    { key: "unmatched", label: `Unmatched (${lines.filter((l) => l.status === "unmatched").length})`, color: BRAND.gold },
-    { key: "matched",   label: `Matched (${lines.filter((l) => l.status === "matched").length})`,     color: BRAND.green },
-    { key: "flagged",   label: `Flagged (${lines.filter((l) => l.status === "flagged").length})`,     color: "#ef4444" },
+    { key: "all",       label: `All (${lines.length})`,                                                    color: "rgba(255,255,255,0.7)" },
+    { key: "unmatched", label: `Unmatched (${lines.filter((l) => l.matchStatus === "Unmatched").length})`, color: BRAND.gold },
+    { key: "matched",   label: `Matched (${lines.filter((l) => l.matchStatus === "Matched").length})`,     color: BRAND.green },
+    { key: "flagged",   label: `Flagged (${lines.filter((l) => l.matchStatus === "Flagged").length})`,     color: "#ef4444" },
   ];
-
-  const availableTxs = internalTransactions.filter((t) => t.status !== "reconciled");
 
   function handleFilterChange(key: FilterKey) {
     onFilterChange(key);
@@ -287,7 +293,7 @@ export function ReconciliationTable({
                         ? "No matched lines yet — start matching transactions"
                         : activeFilter === "flagged"
                         ? "No flagged lines — everything looks good!"
-                        : "Upload a bank statement to begin reconciliation"}
+                        : "No lines found"}
                     </span>
                   </div>
                 </td>
@@ -299,56 +305,45 @@ export function ReconciliationTable({
                   className="group transition-colors duration-150"
                   style={{
                     borderBottom: "1px solid rgba(255,255,255,0.04)",
-                    borderLeft: `3px solid ${line.status === "matched" ? BRAND.green : line.status === "flagged" ? "#ef4444" : "transparent"}`,
+                    borderLeft: `3px solid ${line.matchStatus === "Matched" ? BRAND.green : line.matchStatus === "Flagged" ? "#ef4444" : "transparent"}`,
                     backgroundColor:
-                      line.status === "matched" ? `${BRAND.green}04`
-                      : line.status === "flagged" ? "rgba(239,68,68,0.03)"
+                      line.matchStatus === "Matched" ? `${BRAND.green}04`
+                      : line.matchStatus === "Flagged" ? "rgba(239,68,68,0.03)"
                       : "transparent",
                   }}
                   onMouseEnter={(e) => {
-                    if (line.status !== "matched") e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.02)";
+                    if (line.matchStatus !== "Matched") e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.02)";
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.backgroundColor =
-                      line.status === "matched" ? `${BRAND.green}04`
-                      : line.status === "flagged" ? "rgba(239,68,68,0.03)"
+                      line.matchStatus === "Matched" ? `${BRAND.green}04`
+                      : line.matchStatus === "Flagged" ? "rgba(239,68,68,0.03)"
                       : "transparent";
                   }}
                 >
                   <td className="px-4 py-3">
                     <span className="text-sm font-mono" style={{ color: "rgba(255,255,255,0.65)" }}>
-                      {line.date}
+                      {line.dateFormatted}
                     </span>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-col gap-1">
                       <span className="text-sm text-white font-medium">{line.description}</span>
-                      {line.confidence !== undefined && line.confidence > 0 && line.status !== "matched" && (
-                        <ConfidencePill score={line.confidence} />
+                      {line.matchConfidence !== null && line.matchConfidence > 0 && line.matchStatus !== "Matched" && (
+                        <ConfidencePill score={line.matchConfidence} />
                       )}
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <AmountCell amount={line.amount} rawType={line.rawType} />
+                    <AmountCell amount={line.amount} isIncome={line.isIncome} />
                   </td>
                   <td className="px-4 py-3">
-                    <StatusBadge status={line.status} />
+                    <StatusBadge status={line.matchStatus} />
                   </td>
                   <td className="px-4 py-3">
                     <MatchActionCell
                       line={line}
-                      availableTxs={availableTxs}
-                      selectedMatch={selectedMatches[line.id] ?? ""}
-                      onSelectMatch={(txId) => setSelectedMatches((s) => ({ ...s, [line.id]: txId }))}
-                      onMatch={() => {
-                        const txId = selectedMatches[line.id];
-                        if (txId) {
-                          onMatch(line.id, txId);
-                          setSelectedMatches((s) => { const n = { ...s }; delete n[line.id]; return n; });
-                        }
-                      }}
-                      onFlag={() => onFlag(line.id)}
-                      onUnmatch={() => onUnmatch(line.id)}
+                      reconciliationId={reconciliationId}
                       onAddAsNew={() => onAddAsNew(line)}
                     />
                   </td>
