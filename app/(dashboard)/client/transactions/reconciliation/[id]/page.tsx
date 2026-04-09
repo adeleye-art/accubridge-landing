@@ -67,7 +67,7 @@ export default function ReconciliationDetailPage() {
 
   async function handleAutoMatch() {
     const result = await autoMatch(id);
-    if ("data" in result) {
+    if ("data" in result && result.data !== undefined) {
       toast({ variant: "success", title: `Auto-matched ${result.data.MatchedCount} line${result.data.MatchedCount !== 1 ? "s" : ""}` });
     } else {
       toast({ variant: "error", title: "Auto-match failed" });
@@ -77,7 +77,7 @@ export default function ReconciliationDetailPage() {
 
   async function handleFinalize() {
     const result = await finalise(id);
-    if ("data" in result && result.data.success) {
+    if ("data" in result && result.data?.success) {
       toast({ variant: "success", title: "Reconciliation finalised", description: `${stats.matched} lines locked` });
       setTimeout(() => router.push("/client/transactions/reconciliation"), 1000);
     } else {

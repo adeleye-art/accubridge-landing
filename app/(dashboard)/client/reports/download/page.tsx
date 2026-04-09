@@ -13,6 +13,7 @@ import { getPeriodRange } from "@/lib/reports/report-calculations";
 import { exportPnLToPDF, exportBalanceSheetToPDF, exportCashFlowToPDF } from "@/lib/reports/generate-pdf";
 import { exportPnLToCSV, exportPnLToXLSX, exportBalanceSheetToCSV, exportBalanceSheetToXLSX, exportCashFlowToCSV, exportCashFlowToXLSX } from "@/lib/reports/generate-excel";
 import { useCurrency } from "@/lib/currency-context";
+import { type SupportedCurrency } from "@/lib/currency";
 import {
   useGetPnLReportQuery, useGetBalanceSheetReportQuery, useGetCashFlowReportQuery,
   type ApiPnLReport, type ApiBalanceSheetReport, type ApiCashFlowReport,
@@ -128,7 +129,7 @@ const inputStyle: React.CSSProperties = {
 interface DownloadCardProps {
   id: ReportId;
   activeRange: ReportDateRange;
-  currency: string;
+  currency: SupportedCurrency;
 }
 
 function PnLDownloadCard({ activeRange, currency }: Omit<DownloadCardProps, "id">) {

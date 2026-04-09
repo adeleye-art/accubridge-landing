@@ -10,6 +10,7 @@ import { exportCashFlowToPDF } from "@/lib/reports/generate-pdf";
 import { exportCashFlowToCSV, exportCashFlowToXLSX } from "@/lib/reports/generate-excel";
 import type { ReportDateRange, CashFlowReport } from "@/types/reports";
 import { useCurrency } from "@/lib/currency-context";
+import { type SupportedCurrency } from "@/lib/currency";
 import { useGetCashFlowReportQuery, type ApiCashFlowReport, type ApiCashFlowEntry } from "@/lib/api/reportApi";
 
 const BRAND = { green: "#06D6A0", gold: "#D4AF37", accent: "#3E92CC", muted: "#6B7280" };
@@ -102,7 +103,7 @@ function buildRows(api: ApiCashFlowReport): ReportRow[] {
 
 interface CashFlowContentProps {
   range: ReportDateRange;
-  currency: string;
+  currency: SupportedCurrency;
   onReportReady: (r: CashFlowReport) => void;
 }
 

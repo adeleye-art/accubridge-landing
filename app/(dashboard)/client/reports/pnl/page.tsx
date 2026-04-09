@@ -10,6 +10,7 @@ import { exportPnLToPDF } from "@/lib/reports/generate-pdf";
 import { exportPnLToCSV, exportPnLToXLSX } from "@/lib/reports/generate-excel";
 import type { ReportDateRange, PnLReport } from "@/types/reports";
 import { useCurrency } from "@/lib/currency-context";
+import { type SupportedCurrency } from "@/lib/currency";
 import { useGetPnLReportQuery, type ApiPnLReport } from "@/lib/api/reportApi";
 
 const BRAND = { green: "#06D6A0", gold: "#D4AF37", accent: "#3E92CC", muted: "#6B7280" };
@@ -80,7 +81,7 @@ function buildRows(api: ApiPnLReport): ReportRow[] {
 
 interface PnLContentProps {
   range: ReportDateRange;
-  currency: string;
+  currency: SupportedCurrency;
   onReportReady: (r: PnLReport) => void;
 }
 
