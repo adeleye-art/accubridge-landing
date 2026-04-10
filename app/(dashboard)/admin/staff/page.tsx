@@ -6,39 +6,42 @@ import { PermissionGuard } from "@/components/auth/permission-guard";
 import { SystemSheet } from "@/components/shared/system-sheet";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useToast } from "@/components/shared/toast";
+import {
+  useGetStaffQuery,
+  useCreateStaffMutation,
+  useToggleStaffStatusMutation,
+  useDeleteStaffMutation,
+} from "@/lib/api/staffApi";
 
 const BRAND = { gold: "#D4AF37", accent: "#3E92CC", muted: "#6B7280", primary: "#0A2463" };
 
-type StaffStatus = "Active" | "Inactive";
-interface StaffMember {
-  id: string; name: string; email: string; role: string;
-  clients: number; status: StaffStatus; joined: string;
+function Skeleton({ className }: { className?: string }) {
+  return <div className={`animate-pulse rounded-lg ${className ?? ""}`} style={{ backgroundColor: "rgba(255,255,255,0.08)" }} />;
 }
 
-const INITIAL_STAFF: StaffMember[] = [
-  { id: "s1", name: "Mark Chen",    email: "mark@accubridge.com",  role: "Senior Accountant",  clients: 38, status: "Active",   joined: "1 Oct 2025"  },
-  { id: "s2", name: "Priya Sharma", email: "priya@accubridge.com", role: "Accountant",          clients: 22, status: "Active",   joined: "5 Nov 2025"  },
-  { id: "s3", name: "Tom Walsh",    email: "tom@accubridge.com",   role: "Junior Accountant",   clients: 0,  status: "Inactive", joined: "1 Feb 2026"  },
-];
-
-const ROLE_OPTIONS = ["Senior Accountant", "Accountant", "Junior Accountant"];
-
 // ─── Create Staff Sheet ───────────────────────────────────────────────────────
-function CreateStaffSheet({ open, onClose, onCreate }: { open: boolean; onClose: () => void; onCreate: (member: Omit<StaffMember, "id" | "clients" | "joined">) => void }) {
-  const [form, setForm] = useState({ name: "", email: "", role: ROLE_OPTIONS[1], password: "" });
-  const [loading, setLoading] = useState(false);
+function CreateStaffSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [form, setForm] = useState({ name: "", lastname: "", email: "", password: "", phoneNo: "", country: "" });
+  const [createStaff, { isLoading }] = useCreateStaffMutation();
   const { toast } = useToast();
 
-  const handleSubmit = () => {
-    if (!form.name || !form.email) return;
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      onCreate({ name: form.name, email: form.email, role: form.role, status: "Active" });
-      toast({ title: `Staff account created for ${form.name}`, variant: "success" });
-      setForm({ name: "", email: "", role: ROLE_OPTIONS[1], password: "" });
+  const handleSubmit = async () => {
+    if (!form.name || !form.lastname || !form.email || !form.password) return;
+    try {
+      await createStaff({
+        name: form.name,
+        lastname: form.lastname,
+        email: form.email,
+        password: form.password,
+        phoneNo: form.phoneNo || undefined,
+        country: form.country || undefined,
+      }).unwrap();
+      toast({ title: `Staff account created for ${form.name} ${form.lastname}`, variant: "success" });
+      setForm({ name: "", lastname: "", email: "", password: "", phoneNo: "", country: "" });
       onClose();
-    }, 1000);
+    } catch {
+      toast({ title: "Failed to create staff account", variant: "error" });
+    }
   };
 
   const inputStyle = { backgroundColor: "rgba(255,255,255,0.05)", borderColor: "rgba(255,255,255,0.15)", color: "white" };
@@ -48,18 +51,21 @@ function CreateStaffSheet({ open, onClose, onCreate }: { open: boolean; onClose:
     <SystemSheet open={open} title="Add Staff Member" description="Create a new accountant account on the platform" onClose={onClose}
       footer={
         <div className="flex gap-3 justify-end">
-          <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium border" style={{ borderColor: "rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.7)" }}>Cancel</button>
-          <button type="button" onClick={handleSubmit} disabled={loading} className="px-5 py-2 rounded-xl text-sm font-bold transition-opacity" style={{ backgroundColor: BRAND.gold, color: BRAND.primary, opacity: loading ? 0.7 : 1 }}>
-            {loading ? "Creating..." : "Create Account"}
+          <button type="button" onClick={onClose} disabled={isLoading} className="px-4 py-2 rounded-xl text-sm font-medium border" style={{ borderColor: "rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.7)" }}>Cancel</button>
+          <button type="button" onClick={handleSubmit} disabled={isLoading} className="px-5 py-2 rounded-xl text-sm font-bold transition-opacity" style={{ backgroundColor: BRAND.gold, color: BRAND.primary, opacity: isLoading ? 0.7 : 1 }}>
+            {isLoading ? "Creating…" : "Create Account"}
           </button>
         </div>
       }
     >
       <div className="flex flex-col gap-4">
         {[
-          { label: "Full Name", key: "name", type: "text", placeholder: "e.g. John Smith" },
-          { label: "Email Address", key: "email", type: "email", placeholder: "john@accubridge.com" },
-          { label: "Temporary Password", key: "password", type: "password", placeholder: "••••••••" },
+          { label: "First Name",         key: "name",     type: "text",     placeholder: "e.g. John"             },
+          { label: "Last Name",          key: "lastname", type: "text",     placeholder: "e.g. Smith"            },
+          { label: "Email Address",      key: "email",    type: "email",    placeholder: "john@accubridge.com"   },
+          { label: "Temporary Password", key: "password", type: "password", placeholder: "••••••••"              },
+          { label: "Phone (optional)",   key: "phoneNo",  type: "text",     placeholder: "+1234567890"           },
+          { label: "Country (optional)", key: "country",  type: "text",     placeholder: "e.g. US"               },
         ].map(({ label, key, type, placeholder }) => (
           <div key={key}>
             <label className="block text-sm font-medium mb-2" style={labelStyle}>{label}</label>
@@ -69,13 +75,6 @@ function CreateStaffSheet({ open, onClose, onCreate }: { open: boolean; onClose:
               style={inputStyle} />
           </div>
         ))}
-        <div>
-          <label className="block text-sm font-medium mb-2" style={labelStyle}>Role</label>
-          <select value={form.role} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
-            className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none" style={inputStyle}>
-            {ROLE_OPTIONS.map((r) => <option key={r} value={r} style={{ background: "#0A2463" }}>{r}</option>)}
-          </select>
-        </div>
       </div>
     </SystemSheet>
   );
@@ -83,31 +82,35 @@ function CreateStaffSheet({ open, onClose, onCreate }: { open: boolean; onClose:
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function AdminStaffPage() {
-  const [staff, setStaff] = useState(INITIAL_STAFF);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; id: string; name: string }>({ open: false, id: "", name: "" });
+  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; id: number; name: string }>({ open: false, id: 0, name: "" });
   const { toast } = useToast();
 
-  const totalActive = staff.filter((s) => s.status === "Active").length;
-  const avgClients = staff.length ? Math.round(staff.reduce((a, s) => a + s.clients, 0) / staff.length) : 0;
+  const { data, isLoading } = useGetStaffQuery({ pageSize: 100 });
+  const [toggleStatus, { isLoading: toggling }] = useToggleStaffStatusMutation();
+  const [deleteStaff, { isLoading: deleting }] = useDeleteStaffMutation();
 
-  const toggleStatus = (id: string) => {
-    setStaff((prev) =>
-      prev.map((s) => s.id === id ? { ...s, status: s.status === "Active" ? "Inactive" : "Active" as StaffStatus } : s)
-    );
-    const member = staff.find((s) => s.id === id);
-    toast({ title: `${member?.name} ${member?.status === "Active" ? "deactivated" : "activated"}`, variant: "success" });
+  const staff = data?.staff ?? [];
+  const totalActive = staff.filter((s) => s.isActive).length;
+  const avgClients = staff.length ? Math.round(staff.reduce((a, s) => a + (s.assignedClientsCount ?? 0), 0) / staff.length) : 0;
+
+  const handleToggle = async (id: number, isActive: boolean, name: string) => {
+    try {
+      await toggleStatus(id).unwrap();
+      toast({ title: `${name} ${isActive ? "deactivated" : "activated"}`, variant: "success" });
+    } catch {
+      toast({ title: "Failed to update status", variant: "error" });
+    }
   };
 
-  const handleDelete = (id: string) => {
-    setStaff((prev) => prev.filter((s) => s.id !== id));
-    toast({ title: "Staff account removed", variant: "success" });
-    setDeleteDialog({ open: false, id: "", name: "" });
-  };
-
-  const handleCreate = (data: Omit<StaffMember, "id" | "clients" | "joined">) => {
-    const newMember: StaffMember = { ...data, id: `s${Date.now()}`, clients: 0, joined: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) };
-    setStaff((prev) => [newMember, ...prev]);
+  const handleDelete = async () => {
+    try {
+      await deleteStaff(deleteDialog.id).unwrap();
+      toast({ title: "Staff account removed", variant: "success" });
+      setDeleteDialog({ open: false, id: 0, name: "" });
+    } catch {
+      toast({ title: "Failed to remove staff", variant: "error" });
+    }
   };
 
   return (
@@ -133,9 +136,9 @@ export default function AdminStaffPage() {
         {/* Summary badges */}
         <div className="flex gap-3 flex-wrap">
           {[
-            { label: "Total Staff",          value: staff.length,  color: BRAND.accent },
-            { label: "Active",               value: totalActive,   color: "#06D6A0"    },
-            { label: "Avg Clients / Member", value: avgClients,    color: BRAND.gold   },
+            { label: "Total Staff",          value: isLoading ? "—" : staff.length,  color: BRAND.accent },
+            { label: "Active",               value: isLoading ? "—" : totalActive,   color: "#06D6A0"    },
+            { label: "Avg Clients / Member", value: isLoading ? "—" : avgClients,    color: BRAND.gold   },
           ].map((badge) => (
             <div key={badge.label} className="flex items-center gap-2 px-4 py-2 rounded-full border" style={{ borderColor: "rgba(255,255,255,0.1)", backgroundColor: "rgba(255,255,255,0.04)" }}>
               <span className="font-bold text-sm" style={{ color: badge.color }}>{badge.value}</span>
@@ -150,45 +153,58 @@ export default function AdminStaffPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                  {["Name", "Role", "Clients Assigned", "Status", "Joined", "Actions"].map((h) => (
+                  {["Name", "Role", "Clients Assigned", "Status", "Actions"].map((h) => (
                     <th key={h} className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: BRAND.muted }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {staff.map((s) => (
-                  <tr key={s.id} className="transition-colors duration-150 hover:bg-white/[0.02]" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                    <td className="px-5 py-3.5">
-                      <div className="font-medium">{s.name}</div>
-                      <div className="text-xs" style={{ color: BRAND.muted }}>{s.email}</div>
-                    </td>
-                    <td className="px-5 py-3.5 text-sm" style={{ color: "rgba(255,255,255,0.7)" }}>{s.role}</td>
-                    <td className="px-5 py-3.5 font-bold" style={{ color: BRAND.accent }}>{s.clients}</td>
-                    <td className="px-5 py-3.5">
-                      <span className="text-xs font-medium px-2.5 py-1 rounded-full" style={{
-                        color: s.status === "Active" ? "#06D6A0" : "#6B7280",
-                        backgroundColor: s.status === "Active" ? "rgba(6,214,160,0.1)" : "rgba(107,114,128,0.1)",
-                      }}>{s.status}</span>
-                    </td>
-                    <td className="px-5 py-3.5 text-xs" style={{ color: BRAND.muted }}>{s.joined}</td>
-                    <td className="px-5 py-3.5">
-                      <PermissionGuard permission="manage_staff">
-                        <div className="flex items-center gap-1.5">
-                          <button type="button" onClick={() => toggleStatus(s.id)}
-                            className="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
-                            style={{ color: s.status === "Active" ? "#D4AF37" : "#06D6A0" }}
-                            title={s.status === "Active" ? "Deactivate" : "Activate"}>
-                            {s.status === "Active" ? <PowerOff size={14} /> : <Power size={14} />}
-                          </button>
-                          <button type="button" onClick={() => setDeleteDialog({ open: true, id: s.id, name: s.name })}
-                            className="p-1.5 rounded-lg hover:bg-white/10 transition-colors" style={{ color: "#ef4444" }} title="Remove staff">
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </PermissionGuard>
-                    </td>
+                {isLoading
+                  ? Array.from({ length: 3 }).map((_, i) => (
+                      <tr key={i} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                        {Array.from({ length: 5 }).map((__, j) => (
+                          <td key={j} className="px-5 py-4"><Skeleton className="h-4 w-full" /></td>
+                        ))}
+                      </tr>
+                    ))
+                  : staff.map((s) => (
+                      <tr key={s.id} className="transition-colors duration-150 hover:bg-white/[0.02]" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                        <td className="px-5 py-3.5">
+                          <div className="font-medium">{s.fullName}</div>
+                          <div className="text-xs" style={{ color: BRAND.muted }}>{s.email}</div>
+                        </td>
+                        <td className="px-5 py-3.5 text-sm" style={{ color: "rgba(255,255,255,0.7)" }}>{s.role}</td>
+                        <td className="px-5 py-3.5 font-bold" style={{ color: BRAND.accent }}>{s.assignedClientsCount ?? 0}</td>
+                        <td className="px-5 py-3.5">
+                          <span className="text-xs font-medium px-2.5 py-1 rounded-full" style={{
+                            color: s.isActive ? "#06D6A0" : "#6B7280",
+                            backgroundColor: s.isActive ? "rgba(6,214,160,0.1)" : "rgba(107,114,128,0.1)",
+                          }}>{s.isActive ? "Active" : "Inactive"}</span>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <PermissionGuard permission="manage_staff">
+                            <div className="flex items-center gap-1.5">
+                              <button type="button" onClick={() => handleToggle(s.id, s.isActive, s.fullName)} disabled={toggling}
+                                className="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+                                style={{ color: s.isActive ? "#D4AF37" : "#06D6A0" }}
+                                title={s.isActive ? "Deactivate" : "Activate"}>
+                                {s.isActive ? <PowerOff size={14} /> : <Power size={14} />}
+                              </button>
+                              <button type="button" onClick={() => setDeleteDialog({ open: true, id: s.id, name: s.fullName })}
+                                className="p-1.5 rounded-lg hover:bg-white/10 transition-colors" style={{ color: "#ef4444" }} title="Remove staff">
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </PermissionGuard>
+                        </td>
+                      </tr>
+                    ))
+                }
+                {!isLoading && staff.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-5 py-10 text-center text-sm" style={{ color: BRAND.muted }}>No staff members found.</td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>
@@ -196,15 +212,15 @@ export default function AdminStaffPage() {
 
       </div>
 
-      <CreateStaffSheet open={sheetOpen} onClose={() => setSheetOpen(false)} onCreate={handleCreate} />
+      <CreateStaffSheet open={sheetOpen} onClose={() => setSheetOpen(false)} />
       <ConfirmDialog
         open={deleteDialog.open}
         title="Remove Staff Member"
         description={`Are you sure you want to remove "${deleteDialog.name}"? This cannot be undone.`}
-        confirmLabel="Remove"
+        confirmLabel={deleting ? "Removing…" : "Remove"}
         variant="danger"
-        onConfirm={() => handleDelete(deleteDialog.id)}
-        onCancel={() => setDeleteDialog({ open: false, id: "", name: "" })}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteDialog({ open: false, id: 0, name: "" })}
       />
     </div>
   );

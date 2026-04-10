@@ -125,6 +125,31 @@ export interface CashFlowEntryInput {
   orderIndex: number;
 }
 
+// ─── Admin Reports Overview Types ────────────────────────────────────────────
+
+export interface ApiAdminReportType {
+  reportType: string;
+  icon: string;
+  clientName: string;
+  generatedBy: string;
+  generatedAt: string;
+  generatedAtFormatted: string;
+  downloadUrl: string;
+}
+
+export interface ApiAdminRecentReport {
+  clientName: string;
+  reportType: string;
+  generatedBy: string;
+  date: string;
+  dateFormatted: string;
+}
+
+export interface ApiAdminReportsOverview {
+  reportTypes: ApiAdminReportType[];
+  recentlyGenerated: ApiAdminRecentReport[];
+}
+
 // ─── RTK Query Endpoints ──────────────────────────────────────────────────────
 
 export const reportApi = baseApi.injectEndpoints({
@@ -169,6 +194,13 @@ export const reportApi = baseApi.injectEndpoints({
       query: (id) => ({ url: `/report/cash-flow/entry/${id}`, method: "DELETE" }),
       invalidatesTags: ["Report"],
     }),
+
+    getAdminReportsOverview: builder.query<ApiAdminReportsOverview, void>({
+      query: () => "/report/admin/overview",
+      transformResponse: (res: { success: boolean; data: ApiAdminReportsOverview } | ApiAdminReportsOverview) =>
+        "data" in res && res.data ? res.data : (res as ApiAdminReportsOverview),
+      providesTags: ["Report"],
+    }),
   }),
 });
 
@@ -180,4 +212,8 @@ export const {
   useUpsertCashFlowEntryMutation,
   useDeleteBalanceSheetEntryMutation,
   useDeleteCashFlowEntryMutation,
+  useGetAdminReportsOverviewQuery,
+  useLazyGetPnLReportQuery,
+  useLazyGetBalanceSheetReportQuery,
+  useLazyGetCashFlowReportQuery,
 } = reportApi;

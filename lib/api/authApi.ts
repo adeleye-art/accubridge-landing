@@ -180,6 +180,14 @@ export const authApi = baseApi.injectEndpoints({
         body,
       }),
     }),
+
+    unlockUser: builder.mutation<{ success: boolean; message: string }, { email: string }>({
+      query: (body) => ({
+        url: "/account/unlock-user",
+        method: "POST",
+        body,
+      }),
+    }),
   }),
 });
 
@@ -197,4 +205,5 @@ export const {
   useEnable2faMutation,
   useDisable2faMutation,
   useSignin2faMutation,
+  useUnlockUserMutation,
 } = authApi;

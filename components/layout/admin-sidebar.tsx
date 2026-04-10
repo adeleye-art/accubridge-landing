@@ -22,6 +22,7 @@ import {
   Bell,
   Search,
 } from "lucide-react";
+import { useSignOutMutation } from "@/lib/api/authApi";
 
 // ─── Brand constants ──────────────────────────────────────────────────────────
 const BRAND = {
@@ -278,6 +279,21 @@ function NavSections({ activeItem, openSubMenu, onToggle, onSetActive, pathname,
 
 // ─── User footer ──────────────────────────────────────────────────────────────
 function UserFooter() {
+  const router = useRouter();
+  const [signOut, { isLoading }] = useSignOutMutation();
+
+  const handleLogout = async () => {
+    try {
+      await signOut().unwrap();
+    } finally {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("auth_token");
+        localStorage.removeItem("refresh_token");
+      }
+      router.push("/signin");
+    }
+  };
+
   return (
     <div className="flex-shrink-0 mx-3 mb-4 mt-2 p-3 rounded-xl border flex items-center gap-3" style={{ backgroundColor: "rgba(255,255,255,0.04)", borderColor: "rgba(255,255,255,0.08)" }}>
       <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 border" style={{ backgroundColor: `${BRAND.gold}20`, borderColor: `${BRAND.gold}30` }}>
@@ -287,7 +303,13 @@ function UserFooter() {
         <div className="text-white text-xs font-semibold truncate">Admin User</div>
         <div className="text-xs truncate" style={{ color: BRAND.muted }}>Super Admin</div>
       </div>
-      <button type="button" className="flex-shrink-0 p-1.5 rounded-lg transition-colors duration-200 hover:bg-white/10" aria-label="Logout">
+      <button
+        type="button"
+        onClick={handleLogout}
+        disabled={isLoading}
+        className="flex-shrink-0 p-1.5 rounded-lg transition-colors duration-200 hover:bg-white/10 disabled:opacity-50"
+        aria-label="Logout"
+      >
         <LogOut size={14} style={{ color: BRAND.muted }} />
       </button>
     </div>
