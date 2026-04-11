@@ -1,78 +1,61 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
-import { Pencil, Plus, Clock, CheckCircle2, XCircle } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Pencil, Plus, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { PermissionGuard } from "@/components/auth/permission-guard";
 import { SystemSheet } from "@/components/shared/system-sheet";
 import { useToast } from "@/components/shared/toast";
-import { type SupportedCurrency, formatAmountRaw } from "@/lib/currency";
-import { useCurrency } from "@/lib/currency-context";
+import {
+  useGetTransactionsQuery,
+  useGetTransactionSummaryQuery,
+  useGetTransactionCategoriesQuery,
+  useCreateTransactionMutation,
+  useUpdateTransactionMutation,
+  ApiTransaction,
+} from "@/lib/api/transactionApi";
 
 const BRAND = { gold: "#D4AF37", accent: "#3E92CC", muted: "#6B7280", primary: "#0A2463" };
 
-type TxType = "Income" | "Expense";
-type ApprovalStatus = "pending_approval" | "approved" | "rejected";
-
-interface Transaction {
-  id: string; date: string; client: string; type: TxType; category: string;
-  amount: number; currency: SupportedCurrency; approval: ApprovalStatus;
-}
-
-const ASSIGNED_CLIENTS = ["All Clients", "Apex Solutions Ltd", "Nova Consulting UK", "Bright Path Ltd", "TechBridge NG Ltd", "Lagos First Capital"];
-const CLIENT_LIST      = ASSIGNED_CLIENTS.slice(1);
-const CATEGORIES       = ["Salaries & Wages", "Office Rent", "Consulting Fees", "Product Sales", "Software Subscriptions", "Marketing", "Other"];
-
-const INIT_TRANSACTIONS: Transaction[] = [
-  { id: "t1", date: "3 Apr 2026",  client: "Apex Solutions Ltd", type: "Expense", category: "Salaries & Wages",      amount: 8700,  currency: "GBP", approval: "approved" },
-  { id: "t2", date: "2 Apr 2026",  client: "Nova Consulting UK", type: "Income",  category: "Consulting Fees",       amount: 12500, currency: "GBP", approval: "approved" },
-  { id: "t3", date: "1 Apr 2026",  client: "Bright Path Ltd",    type: "Expense", category: "Office Rent",           amount: 2200,  currency: "GBP", approval: "approved" },
-  { id: "t4", date: "1 Apr 2026",  client: "TechBridge NG Ltd",  type: "Income",  category: "Product Sales",         amount: 5400,  currency: "NGN", approval: "approved" },
-  { id: "t5", date: "31 Mar 2026", client: "Apex Solutions Ltd", type: "Expense", category: "Software Subscriptions",amount: 890,   currency: "GBP", approval: "approved" },
+const TYPE_TABS = [
+  { label: "All",     value: undefined },
+  { label: "Income",  value: 1 },
+  { label: "Expense", value: 2 },
 ];
 
-function ApprovalBadge({ status }: { status: ApprovalStatus }) {
-  const map: Record<ApprovalStatus, { color: string; bg: string; icon: React.ReactNode; label: string }> = {
-    approved:         { color: "#06D6A0", bg: "rgba(6,214,160,0.1)",  icon: <CheckCircle2 size={11} />, label: "Approved"         },
-    pending_approval: { color: "#D4AF37", bg: "rgba(212,175,55,0.1)", icon: <Clock size={11} />,        label: "Pending Approval" },
-    rejected:         { color: "#ef4444", bg: "rgba(239,68,68,0.1)",  icon: <XCircle size={11} />,      label: "Rejected"         },
-  };
-  const s = map[status];
-  return (
-    <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full whitespace-nowrap" style={{ color: s.color, backgroundColor: s.bg }}>
-      {s.icon} {s.label}
-    </span>
-  );
+function Skeleton({ className }: { className?: string }) {
+  return <div className={`animate-pulse rounded-lg ${className ?? ""}`} style={{ backgroundColor: "rgba(255,255,255,0.08)" }} />;
 }
 
 const inputStyle = { backgroundColor: "rgba(255,255,255,0.05)", borderColor: "rgba(255,255,255,0.15)", color: "white" };
 const labelStyle = { color: "rgba(255,255,255,0.7)" };
 
-function ApprovalNotice() {
-  return (
-    <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs" style={{ backgroundColor: "rgba(212,175,55,0.08)", border: "1px solid rgba(212,175,55,0.2)", color: "rgba(255,255,255,0.6)" }}>
-      <Clock size={13} style={{ color: BRAND.gold, flexShrink: 0, marginTop: 1 }} />
-      <span>This transaction requires admin approval before it is reflected in the system.</span>
-    </div>
-  );
+interface TxFormState {
+  type: number;
+  date: string;
+  category: string;
+  amount: string;
+  description: string;
+  referenceNo: string;
 }
+
+const EMPTY_FORM: TxFormState = { type: 2, date: "", category: "", amount: "", description: "", referenceNo: "" };
 
 function TransactionForm({
   form,
   setForm,
-  symbol,
+  categories,
 }: {
-  form: { date: string; client: string; type: TxType; category: string; amount: string };
-  setForm: React.Dispatch<React.SetStateAction<typeof form>>;
-  symbol: string;
+  form: TxFormState;
+  setForm: React.Dispatch<React.SetStateAction<TxFormState>>;
+  categories: string[];
 }) {
   return (
     <div className="flex flex-col gap-4">
-      <ApprovalNotice />
-
       <div>
-        <label className="block text-sm font-medium mb-2" style={labelStyle}>Client</label>
-        <select value={form.client} onChange={(e) => setForm((f) => ({ ...f, client: e.target.value }))} className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none" style={inputStyle}>
-          {CLIENT_LIST.map((c) => <option key={c} value={c} style={{ background: "#0A2463" }}>{c}</option>)}
+        <label className="block text-sm font-medium mb-2" style={labelStyle}>Type</label>
+        <select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: Number(e.target.value), category: "" }))} className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none" style={inputStyle}>
+          <option value={1} style={{ background: "#0A2463" }}>Income</option>
+          <option value={2} style={{ background: "#0A2463" }}>Expense</option>
         </select>
       </div>
       <div>
@@ -80,134 +63,160 @@ function TransactionForm({
         <input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none" style={inputStyle} />
       </div>
       <div>
-        <label className="block text-sm font-medium mb-2" style={labelStyle}>Type</label>
-        <select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as TxType }))} className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none" style={inputStyle}>
-          <option value="Income"  style={{ background: "#0A2463" }}>Income</option>
-          <option value="Expense" style={{ background: "#0A2463" }}>Expense</option>
-        </select>
-      </div>
-      <div>
         <label className="block text-sm font-medium mb-2" style={labelStyle}>Category</label>
         <select value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))} className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none" style={inputStyle}>
-          {CATEGORIES.map((c) => <option key={c} value={c} style={{ background: "#0A2463" }}>{c}</option>)}
+          <option value="" style={{ background: "#0A2463" }}>Select category…</option>
+          {categories.map((c) => <option key={c} value={c} style={{ background: "#0A2463" }}>{c}</option>)}
         </select>
       </div>
       <div>
-        <label className="block text-sm font-medium mb-2" style={labelStyle}>{`Amount (e.g. ${symbol}1,200)`}</label>
-        <input type="text" placeholder={`${symbol}0.00`} value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none placeholder-[#6B7280]" style={inputStyle} />
+        <label className="block text-sm font-medium mb-2" style={labelStyle}>Amount</label>
+        <input type="number" min="0" step="0.01" placeholder="0.00" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none placeholder-[#6B7280]" style={inputStyle} />
+      </div>
+      <div>
+        <label className="block text-sm font-medium mb-2" style={labelStyle}>Description</label>
+        <input type="text" placeholder="e.g. March payroll" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none placeholder-[#6B7280]" style={inputStyle} />
+      </div>
+      <div>
+        <label className="block text-sm font-medium mb-2" style={labelStyle}>Reference No. <span style={{ color: BRAND.muted }}>(optional)</span></label>
+        <input type="text" placeholder="e.g. INV-0042" value={form.referenceNo} onChange={(e) => setForm((f) => ({ ...f, referenceNo: e.target.value }))} className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none placeholder-[#6B7280]" style={inputStyle} />
       </div>
     </div>
   );
 }
 
-function AddTransactionSheet({ open, onClose, onAdd }: { open: boolean; onClose: () => void; onAdd: (tx: Omit<Transaction, "id">) => void }) {
-  const { currency, symbol } = useCurrency();
-  const [form, setForm] = useState({ date: "", client: CLIENT_LIST[0], type: "Expense" as TxType, category: CATEGORIES[0], amount: "" });
-  const [loading, setLoading] = useState(false);
+function AddTransactionSheet({ open, onClose, categories }: { open: boolean; onClose: () => void; categories: string[] }) {
+  const [form, setForm] = useState<TxFormState>(EMPTY_FORM);
+  const [createTransaction, { isLoading }] = useCreateTransactionMutation();
   const { toast } = useToast();
 
-  const handleSubmit = () => {
-    if (!form.date || !form.amount) return;
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      onAdd({ date: form.date, client: form.client, type: form.type, category: form.category, amount: parseFloat(form.amount) || 0, currency, approval: "pending_approval" });
-      toast({ title: "Transaction submitted for admin approval", variant: "success" });
-      setForm({ date: "", client: CLIENT_LIST[0], type: "Expense", category: CATEGORIES[0], amount: "" });
+  useEffect(() => { if (!open) setForm(EMPTY_FORM); }, [open]);
+
+  const handleSubmit = async () => {
+    if (!form.date || !form.category || !form.amount || !form.description) {
+      toast({ title: "Please fill in all required fields", variant: "error" });
+      return;
+    }
+    try {
+      await createTransaction({
+        type: form.type,
+        date: new Date(form.date).toISOString(),
+        category: form.category,
+        amount: parseFloat(form.amount),
+        description: form.description,
+        referenceNo: form.referenceNo || null,
+      }).unwrap();
+      toast({ title: "Transaction added", variant: "success" });
       onClose();
-    }, 800);
+    } catch (err: unknown) {
+      const msg = (err as { data?: { message?: string } })?.data?.message ?? "Failed to add transaction";
+      toast({ title: msg, variant: "error" });
+    }
   };
 
   return (
-    <SystemSheet
-      open={open}
-      title="Add Transaction"
-      description="Submitted transactions require admin approval."
-      onClose={onClose}
+    <SystemSheet open={open} title="Add Transaction" description="Add a new transaction for a client." onClose={onClose}
       footer={
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-2 text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>
-            <Clock size={12} style={{ color: BRAND.gold }} />
-            Admin must approve before this appears in the system.
-          </div>
-          <div className="flex gap-3 justify-end">
-            <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl text-sm border" style={{ borderColor: "rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.7)" }}>Cancel</button>
-            <button type="button" onClick={handleSubmit} disabled={loading} className="px-5 py-2 rounded-xl text-sm font-bold" style={{ backgroundColor: BRAND.gold, color: BRAND.primary, opacity: loading ? 0.7 : 1 }}>
-              {loading ? "Submitting..." : "Submit for Approval"}
-            </button>
-          </div>
+        <div className="flex gap-3 justify-end">
+          <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl text-sm border" style={{ borderColor: "rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.7)" }}>Cancel</button>
+          <button type="button" onClick={handleSubmit} disabled={isLoading} className="px-5 py-2 rounded-xl text-sm font-bold disabled:opacity-60" style={{ backgroundColor: BRAND.gold, color: BRAND.primary }}>
+            {isLoading ? "Saving…" : "Add Transaction"}
+          </button>
         </div>
-      }
-    >
-      <TransactionForm form={form} setForm={setForm} symbol={symbol} />
+      }>
+      <TransactionForm form={form} setForm={setForm} categories={categories} />
     </SystemSheet>
   );
 }
 
-function EditTransactionSheet({ tx, onClose, onSave }: { tx: Transaction | null; onClose: () => void; onSave: (updated: Transaction) => void }) {
-  const { symbol } = useCurrency();
-  const [form, setForm] = useState({ date: "", client: CLIENT_LIST[0], type: "Expense" as TxType, category: CATEGORIES[0], amount: "" });
-  const [loading, setLoading] = useState(false);
+function EditTransactionSheet({ tx, onClose, categories }: { tx: ApiTransaction | null; onClose: () => void; categories: string[] }) {
+  const [form, setForm] = useState<TxFormState>(EMPTY_FORM);
+  const [updateTransaction, { isLoading }] = useUpdateTransactionMutation();
   const { toast } = useToast();
 
   useEffect(() => {
-    if (tx) setForm({ date: tx.date, client: tx.client, type: tx.type, category: tx.category, amount: String(tx.amount) });
+    if (tx) {
+      setForm({
+        type: tx.typeValue,
+        date: tx.date.split("T")[0],
+        category: tx.category,
+        amount: String(tx.amount),
+        description: tx.description,
+        referenceNo: tx.referenceNo ?? "",
+      });
+    }
   }, [tx]);
 
-  const handleSave = () => {
-    if (!tx || !form.amount) return;
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      onSave({ ...tx, date: form.date, client: form.client, type: form.type, category: form.category, amount: parseFloat(form.amount) || 0, approval: "pending_approval" });
-      toast({ title: "Edit submitted for admin approval", variant: "success" });
+  const handleSave = async () => {
+    if (!tx || !form.date || !form.category || !form.amount || !form.description) {
+      toast({ title: "Please fill in all required fields", variant: "error" });
+      return;
+    }
+    try {
+      await updateTransaction({
+        id: tx.id,
+        body: {
+          type: form.type,
+          date: new Date(form.date).toISOString(),
+          category: form.category,
+          amount: parseFloat(form.amount),
+          description: form.description,
+          referenceNo: form.referenceNo || null,
+        },
+      }).unwrap();
+      toast({ title: "Transaction updated", variant: "success" });
       onClose();
-    }, 800);
+    } catch (err: unknown) {
+      const msg = (err as { data?: { message?: string } })?.data?.message ?? "Failed to update transaction";
+      toast({ title: msg, variant: "error" });
+    }
   };
 
   return (
-    <SystemSheet
-      open={!!tx}
-      title="Edit Transaction"
-      description="Changes require admin approval before taking effect."
-      onClose={onClose}
+    <SystemSheet open={!!tx} title="Edit Transaction" description="Update this transaction." onClose={onClose}
       footer={
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-2 text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>
-            <Clock size={12} style={{ color: BRAND.gold }} />
-            Admin must approve this edit before it is reflected.
-          </div>
-          <div className="flex gap-3 justify-end">
-            <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl text-sm border" style={{ borderColor: "rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.7)" }}>Cancel</button>
-            <button type="button" onClick={handleSave} disabled={loading} className="px-5 py-2 rounded-xl text-sm font-bold" style={{ backgroundColor: BRAND.gold, color: BRAND.primary, opacity: loading ? 0.7 : 1 }}>
-              {loading ? "Submitting..." : "Submit for Approval"}
-            </button>
-          </div>
+        <div className="flex gap-3 justify-end">
+          <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl text-sm border" style={{ borderColor: "rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.7)" }}>Cancel</button>
+          <button type="button" onClick={handleSave} disabled={isLoading} className="px-5 py-2 rounded-xl text-sm font-bold disabled:opacity-60" style={{ backgroundColor: BRAND.gold, color: BRAND.primary }}>
+            {isLoading ? "Saving…" : "Save Changes"}
+          </button>
         </div>
-      }
-    >
-      <TransactionForm form={form} setForm={setForm} symbol={symbol} />
+      }>
+      <TransactionForm form={form} setForm={setForm} categories={categories} />
     </SystemSheet>
   );
 }
 
 export default function StaffTransactionsPage() {
-  const [transactions, setTransactions] = useState(INIT_TRANSACTIONS);
-  const [clientFilter, setClientFilter] = useState("All Clients");
-  const [addOpen, setAddOpen] = useState(false);
-  const [editTx, setEditTx] = useState<Transaction | null>(null);
+  const [search, setSearch]       = useState("");
+  const [debSearch, setDebSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState<number | undefined>(undefined);
+  const [page, setPage]           = useState(1);
+  const [addOpen, setAddOpen]     = useState(false);
+  const [editTx, setEditTx]       = useState<ApiTransaction | null>(null);
 
-  const filtered = useMemo(() =>
-    transactions.filter((t) => clientFilter === "All Clients" || t.client === clientFilter),
-    [transactions, clientFilter]);
+  const searchTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  function handleSearch(val: string) {
+    setSearch(val);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => { setDebSearch(val); setPage(1); }, 300);
+  }
 
-  const handleAdd = (tx: Omit<Transaction, "id">) => {
-    setTransactions((prev) => [{ ...tx, id: `t${Date.now()}` }, ...prev]);
-  };
+  const { data, isLoading, isFetching } = useGetTransactionsQuery({
+    search: debSearch || undefined,
+    type: typeFilter,
+    page,
+    pageSize: 20,
+    sortDesc: true,
+  });
 
-  const handleSave = (updated: Transaction) => {
-    setTransactions((prev) => prev.map((t) => t.id === updated.id ? updated : t));
-  };
+  const { data: summary } = useGetTransactionSummaryQuery();
+  const { data: catData }  = useGetTransactionCategoriesQuery();
+
+  const transactions = data?.transactions ?? [];
+
+  // pick relevant categories based on selected type in the open form
+  const allCategories = catData?.all ?? [];
 
   return (
     <div className="p-5 md:p-8 text-white">
@@ -227,19 +236,40 @@ export default function StaffTransactionsPage() {
           </PermissionGuard>
         </div>
 
-        {/* Approval info banner */}
-        <div className="flex items-start gap-2 px-4 py-3 rounded-xl border text-xs" style={{ backgroundColor: "rgba(212,175,55,0.06)", borderColor: "rgba(212,175,55,0.2)", color: "rgba(255,255,255,0.5)" }}>
-          <Clock size={13} style={{ color: BRAND.gold, flexShrink: 0, marginTop: 1 }} />
-          <span>Transactions you add or edit are submitted for admin review and will show as <strong style={{ color: BRAND.gold }}>Pending Approval</strong> until actioned by an admin.</span>
-        </div>
+        {/* Summary cards */}
+        {summary && (
+          <div className="grid grid-cols-3 gap-4">
+            {[
+              { label: "Total Income",   value: summary.totalIncome,   color: "#06D6A0", prefix: "+" },
+              { label: "Total Expenses", value: summary.totalExpenses, color: "#ef4444", prefix: "-" },
+              { label: "Net Profit",     value: summary.netProfit,     color: summary.netProfit >= 0 ? "#06D6A0" : "#ef4444", prefix: "" },
+            ].map((s) => (
+              <div key={s.label} className="rounded-2xl p-4 border" style={{ backgroundColor: "rgba(255,255,255,0.04)", borderColor: "rgba(255,255,255,0.08)" }}>
+                <div className="text-xs mb-1" style={{ color: BRAND.muted }}>{s.label}</div>
+                <div className="text-lg font-bold" style={{ color: s.color }}>{s.prefix}£{s.value.toLocaleString()}</div>
+              </div>
+            ))}
+          </div>
+        )}
 
-        {/* Client filter */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <label className="text-sm font-medium" style={{ color: "rgba(255,255,255,0.7)" }}>Client:</label>
-          <select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} className="border rounded-xl px-3 py-2 text-sm text-white outline-none" style={{ backgroundColor: "rgba(255,255,255,0.05)", borderColor: "rgba(255,255,255,0.15)" }}>
-            {ASSIGNED_CLIENTS.map((c) => <option key={c} value={c} style={{ background: "#0A2463" }}>{c}</option>)}
-          </select>
-          <span className="text-xs" style={{ color: BRAND.muted }}>{filtered.length} transactions</span>
+        {/* Filters */}
+        <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl border flex-1 max-w-xs" style={{ backgroundColor: "rgba(255,255,255,0.05)", borderColor: "rgba(255,255,255,0.1)" }}>
+            <Search size={14} style={{ color: BRAND.muted }} />
+            <input type="text" placeholder="Search transactions…" value={search} onChange={(e) => handleSearch(e.target.value)} className="bg-transparent outline-none text-sm text-white placeholder-[#6B7280] flex-1" />
+          </div>
+          <div className="flex gap-1.5">
+            {TYPE_TABS.map((tab) => (
+              <button key={tab.label} type="button" onClick={() => { setTypeFilter(tab.value); setPage(1); }}
+                className="px-3 py-1.5 rounded-full text-xs font-medium transition-all"
+                style={{ backgroundColor: typeFilter === tab.value ? BRAND.gold : "rgba(255,255,255,0.06)", color: typeFilter === tab.value ? BRAND.primary : "rgba(255,255,255,0.6)" }}>
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          {data && (
+            <span className="text-xs ml-auto" style={{ color: BRAND.muted }}>{data.totalCount} transactions</span>
+          )}
         </div>
 
         {/* Table */}
@@ -248,51 +278,71 @@ export default function StaffTransactionsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                  {["Date", "Client", "Type", "Category", "Amount", "Approval", ""].map((h) => (
+                  {["Date", "Type", "Category", "Description", "Ref", "Amount", ""].map((h) => (
                     <th key={h} className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wide" style={{ color: BRAND.muted }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((t) => (
-                  <tr key={t.id} className="hover:bg-white/[0.02] transition-colors" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                    <td className="px-5 py-3.5 text-xs" style={{ color: BRAND.muted }}>{t.date}</td>
-                    <td className="px-5 py-3.5 font-medium">{t.client}</td>
-                    <td className="px-5 py-3.5">
-                      <span className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ color: t.type === "Expense" ? "#ef4444" : "#06D6A0", backgroundColor: t.type === "Expense" ? "rgba(239,68,68,0.1)" : "rgba(6,214,160,0.1)" }}>
-                        {t.type}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5" style={{ color: "rgba(255,255,255,0.7)" }}>{t.category}</td>
-                    <td className="px-5 py-3.5 font-bold" style={{ color: t.type === "Expense" ? "#ef4444" : "#06D6A0" }}>{formatAmountRaw(t.amount, t.currency)}</td>
-                    <td className="px-5 py-3.5"><ApprovalBadge status={t.approval} /></td>
-                    <td className="px-5 py-3.5">
-                      <PermissionGuard permission="edit_transaction">
-                        <button
-                          type="button"
-                          onClick={() => setEditTx(t)}
-                          className="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
-                          style={{ color: BRAND.muted }}
-                          title="Edit transaction"
-                        >
-                          <Pencil size={14} />
-                        </button>
-                      </PermissionGuard>
-                    </td>
-                  </tr>
-                ))}
-                {filtered.length === 0 && (
+                {isLoading || isFetching
+                  ? Array.from({ length: 5 }).map((_, i) => (
+                      <tr key={i} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                        {Array.from({ length: 7 }).map((__, j) => (
+                          <td key={j} className="px-5 py-4"><Skeleton className="h-4 w-full" /></td>
+                        ))}
+                      </tr>
+                    ))
+                  : transactions.map((t) => (
+                      <tr key={t.id} className="hover:bg-white/[0.02] transition-colors" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                        <td className="px-5 py-3.5 text-xs whitespace-nowrap" style={{ color: BRAND.muted }}>{t.dateFormatted}</td>
+                        <td className="px-5 py-3.5">
+                          <span className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ color: t.isIncome ? "#06D6A0" : "#ef4444", backgroundColor: t.isIncome ? "rgba(6,214,160,0.1)" : "rgba(239,68,68,0.1)" }}>
+                            {t.type}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3.5" style={{ color: "rgba(255,255,255,0.7)" }}>{t.category}</td>
+                        <td className="px-5 py-3.5 text-sm" style={{ color: "rgba(255,255,255,0.8)" }}>{t.description}</td>
+                        <td className="px-5 py-3.5 text-xs" style={{ color: BRAND.muted }}>{t.referenceNo ?? "—"}</td>
+                        <td className="px-5 py-3.5 font-bold" style={{ color: t.isIncome ? "#06D6A0" : "#ef4444" }}>{t.formattedAmount}</td>
+                        <td className="px-5 py-3.5">
+                          <PermissionGuard permission="edit_transaction">
+                            <button type="button" onClick={() => setEditTx(t)} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors" style={{ color: BRAND.muted }} title="Edit">
+                              <Pencil size={14} />
+                            </button>
+                          </PermissionGuard>
+                        </td>
+                      </tr>
+                    ))
+                }
+                {!isLoading && !isFetching && transactions.length === 0 && (
                   <tr><td colSpan={7} className="px-5 py-10 text-center text-sm" style={{ color: BRAND.muted }}>No transactions found.</td></tr>
                 )}
               </tbody>
             </table>
           </div>
+
+          {/* Pagination */}
+          {data && data.totalCount > 20 && (
+            <div className="flex items-center justify-between px-5 py-3 border-t" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
+              <span className="text-xs" style={{ color: BRAND.muted }}>Page {page} · {data.totalCount} total</span>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setPage((p) => p - 1)} disabled={page <= 1}
+                  className="p-1.5 rounded-lg border transition-colors hover:bg-white/10 disabled:opacity-30" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
+                  <ChevronLeft size={14} />
+                </button>
+                <button type="button" onClick={() => setPage((p) => p + 1)} disabled={data.totalCount <= page * 20}
+                  className="p-1.5 rounded-lg border transition-colors hover:bg-white/10 disabled:opacity-30" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
       </div>
 
-      <AddTransactionSheet open={addOpen} onClose={() => setAddOpen(false)} onAdd={handleAdd} />
-      <EditTransactionSheet tx={editTx} onClose={() => setEditTx(null)} onSave={handleSave} />
+      <AddTransactionSheet open={addOpen} onClose={() => setAddOpen(false)} categories={allCategories} />
+      <EditTransactionSheet tx={editTx} onClose={() => setEditTx(null)} categories={allCategories} />
     </div>
   );
 }

@@ -1,11 +1,20 @@
 "use client";
 
-import React, { useState } from "react";
-import { Trash2, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Trash2, Pencil, Plus, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { PermissionGuard } from "@/components/auth/permission-guard";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { SystemSheet } from "@/components/shared/system-sheet";
 import { useToast } from "@/components/shared/toast";
-import { useGetTransactionsQuery, useDeleteTransactionMutation, useGetTransactionSummaryQuery } from "@/lib/api/transactionApi";
+import {
+  useGetTransactionsQuery,
+  useGetTransactionSummaryQuery,
+  useGetTransactionCategoriesQuery,
+  useCreateTransactionMutation,
+  useUpdateTransactionMutation,
+  useDeleteTransactionMutation,
+  ApiTransaction,
+} from "@/lib/api/transactionApi";
 
 const BRAND = { gold: "#D4AF37", accent: "#3E92CC", muted: "#6B7280", primary: "#0A2463" };
 
@@ -19,10 +28,181 @@ function Skeleton({ className }: { className?: string }) {
   return <div className={`animate-pulse rounded-lg ${className ?? ""}`} style={{ backgroundColor: "rgba(255,255,255,0.08)" }} />;
 }
 
+// ─── Shared form types & component ───────────────────────────────────────────
+
+interface TxFormState {
+  type: number;
+  date: string;
+  category: string;
+  amount: string;
+  description: string;
+  referenceNo: string;
+}
+
+const EMPTY_FORM: TxFormState = { type: 2, date: "", category: "", amount: "", description: "", referenceNo: "" };
+
+const inputStyle = { backgroundColor: "rgba(255,255,255,0.05)", borderColor: "rgba(255,255,255,0.15)", color: "white" };
+const labelStyle = { color: "rgba(255,255,255,0.7)" };
+
+function TransactionForm({
+  form,
+  setForm,
+  categories,
+}: {
+  form: TxFormState;
+  setForm: React.Dispatch<React.SetStateAction<TxFormState>>;
+  categories: string[];
+}) {
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <label className="block text-sm font-medium mb-2" style={labelStyle}>Type</label>
+        <select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: Number(e.target.value), category: "" }))} className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none" style={inputStyle}>
+          <option value={1} style={{ background: "#0A2463" }}>Income</option>
+          <option value={2} style={{ background: "#0A2463" }}>Expense</option>
+        </select>
+      </div>
+      <div>
+        <label className="block text-sm font-medium mb-2" style={labelStyle}>Date</label>
+        <input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none" style={inputStyle} />
+      </div>
+      <div>
+        <label className="block text-sm font-medium mb-2" style={labelStyle}>Category</label>
+        <select value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))} className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none" style={inputStyle}>
+          <option value="" style={{ background: "#0A2463" }}>Select category…</option>
+          {categories.map((c) => <option key={c} value={c} style={{ background: "#0A2463" }}>{c}</option>)}
+        </select>
+      </div>
+      <div>
+        <label className="block text-sm font-medium mb-2" style={labelStyle}>Amount</label>
+        <input type="number" min="0" step="0.01" placeholder="0.00" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none placeholder-[#6B7280]" style={inputStyle} />
+      </div>
+      <div>
+        <label className="block text-sm font-medium mb-2" style={labelStyle}>Description</label>
+        <input type="text" placeholder="e.g. March payroll" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none placeholder-[#6B7280]" style={inputStyle} />
+      </div>
+      <div>
+        <label className="block text-sm font-medium mb-2" style={labelStyle}>Reference No. <span style={{ color: BRAND.muted }}>(optional)</span></label>
+        <input type="text" placeholder="e.g. INV-0042" value={form.referenceNo} onChange={(e) => setForm((f) => ({ ...f, referenceNo: e.target.value }))} className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none placeholder-[#6B7280]" style={inputStyle} />
+      </div>
+    </div>
+  );
+}
+
+// ─── Add sheet ────────────────────────────────────────────────────────────────
+
+function AddTransactionSheet({ open, onClose, categories }: { open: boolean; onClose: () => void; categories: string[] }) {
+  const [form, setForm] = useState<TxFormState>(EMPTY_FORM);
+  const [createTransaction, { isLoading }] = useCreateTransactionMutation();
+  const { toast } = useToast();
+
+  useEffect(() => { if (!open) setForm(EMPTY_FORM); }, [open]);
+
+  const handleSubmit = async () => {
+    if (!form.date || !form.category || !form.amount || !form.description) {
+      toast({ title: "Please fill in all required fields", variant: "error" });
+      return;
+    }
+    try {
+      await createTransaction({
+        type: form.type,
+        date: new Date(form.date).toISOString(),
+        category: form.category,
+        amount: parseFloat(form.amount),
+        description: form.description,
+        referenceNo: form.referenceNo || null,
+      }).unwrap();
+      toast({ title: "Transaction added", variant: "success" });
+      onClose();
+    } catch (err: unknown) {
+      const msg = (err as { data?: { message?: string } })?.data?.message ?? "Failed to add transaction";
+      toast({ title: msg, variant: "error" });
+    }
+  };
+
+  return (
+    <SystemSheet open={open} title="New Transaction" description="Add a transaction to the platform." onClose={onClose}
+      footer={
+        <div className="flex gap-3 justify-end">
+          <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl text-sm border" style={{ borderColor: "rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.7)" }}>Cancel</button>
+          <button type="button" onClick={handleSubmit} disabled={isLoading} className="px-5 py-2 rounded-xl text-sm font-bold disabled:opacity-60" style={{ backgroundColor: BRAND.gold, color: BRAND.primary }}>
+            {isLoading ? "Saving…" : "Add Transaction"}
+          </button>
+        </div>
+      }>
+      <TransactionForm form={form} setForm={setForm} categories={categories} />
+    </SystemSheet>
+  );
+}
+
+// ─── Edit sheet ───────────────────────────────────────────────────────────────
+
+function EditTransactionSheet({ tx, onClose, categories }: { tx: ApiTransaction | null; onClose: () => void; categories: string[] }) {
+  const [form, setForm] = useState<TxFormState>(EMPTY_FORM);
+  const [updateTransaction, { isLoading }] = useUpdateTransactionMutation();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    if (tx) {
+      setForm({
+        type: tx.typeValue,
+        date: tx.date.split("T")[0],
+        category: tx.category,
+        amount: String(tx.amount),
+        description: tx.description,
+        referenceNo: tx.referenceNo ?? "",
+      });
+    }
+  }, [tx]);
+
+  const handleSave = async () => {
+    if (!tx || !form.date || !form.category || !form.amount || !form.description) {
+      toast({ title: "Please fill in all required fields", variant: "error" });
+      return;
+    }
+    try {
+      await updateTransaction({
+        id: tx.id,
+        body: {
+          type: form.type,
+          date: new Date(form.date).toISOString(),
+          category: form.category,
+          amount: parseFloat(form.amount),
+          description: form.description,
+          referenceNo: form.referenceNo || null,
+        },
+      }).unwrap();
+      toast({ title: "Transaction updated", variant: "success" });
+      onClose();
+    } catch (err: unknown) {
+      const msg = (err as { data?: { message?: string } })?.data?.message ?? "Failed to update transaction";
+      toast({ title: msg, variant: "error" });
+    }
+  };
+
+  return (
+    <SystemSheet open={!!tx} title="Edit Transaction" description="Update this transaction." onClose={onClose}
+      footer={
+        <div className="flex gap-3 justify-end">
+          <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl text-sm border" style={{ borderColor: "rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.7)" }}>Cancel</button>
+          <button type="button" onClick={handleSave} disabled={isLoading} className="px-5 py-2 rounded-xl text-sm font-bold disabled:opacity-60" style={{ backgroundColor: BRAND.gold, color: BRAND.primary }}>
+            {isLoading ? "Saving…" : "Save Changes"}
+          </button>
+        </div>
+      }>
+      <TransactionForm form={form} setForm={setForm} categories={categories} />
+    </SystemSheet>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function AdminTransactionsPage() {
-  const [search, setSearch] = useState("");
+  const [search, setSearch]       = useState("");
   const [typeFilter, setTypeFilter] = useState<number | undefined>(undefined);
-  const [page, setPage] = useState(1);
+  const [page, setPage]           = useState(1);
+  const [addOpen, setAddOpen]     = useState(false);
+  const [editTx, setEditTx]       = useState<ApiTransaction | null>(null);
   const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; id: number }>({ open: false, id: 0 });
   const { toast } = useToast();
 
@@ -34,10 +214,12 @@ export default function AdminTransactionsPage() {
     sortDesc: true,
   });
 
-  const { data: summary } = useGetTransactionSummaryQuery();
+  const { data: summary }        = useGetTransactionSummaryQuery();
+  const { data: catData }        = useGetTransactionCategoriesQuery();
   const [deleteTransaction, { isLoading: deleting }] = useDeleteTransactionMutation();
 
   const transactions = data?.transactions ?? [];
+  const allCategories = catData?.all ?? [];
 
   const handleDelete = async () => {
     try {
@@ -54,10 +236,17 @@ export default function AdminTransactionsPage() {
       <div className="max-w-6xl mx-auto flex flex-col gap-6">
 
         {/* Header */}
-        <div>
-          <div className="inline-block border rounded-lg px-3 py-1 text-xs mb-2" style={{ borderColor: "rgba(255,255,255,0.1)", color: BRAND.muted }}>Admin</div>
-          <h1 className="text-2xl font-bold tracking-tight">All Transactions</h1>
-          <p className="text-sm mt-0.5" style={{ color: BRAND.muted }}>View and manage transactions across all client accounts.</p>
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <div className="inline-block border rounded-lg px-3 py-1 text-xs mb-2" style={{ borderColor: "rgba(255,255,255,0.1)", color: BRAND.muted }}>Admin</div>
+            <h1 className="text-2xl font-bold tracking-tight">All Transactions</h1>
+            <p className="text-sm mt-0.5" style={{ color: BRAND.muted }}>View and manage transactions across all client accounts.</p>
+          </div>
+          <PermissionGuard permission="add_transaction">
+            <button type="button" onClick={() => setAddOpen(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold hover:opacity-90" style={{ backgroundColor: BRAND.gold, color: BRAND.primary }}>
+              <Plus size={16} /> New Transaction
+            </button>
+          </PermissionGuard>
         </div>
 
         {/* Summary cards */}
@@ -133,12 +322,20 @@ export default function AdminTransactionsPage() {
                         <td className="px-5 py-3.5 text-xs" style={{ color: BRAND.muted }}>{t.referenceNo ?? "—"}</td>
                         <td className="px-5 py-3.5 font-bold" style={{ color: t.isIncome ? "#06D6A0" : "#ef4444" }}>{t.formattedAmount}</td>
                         <td className="px-5 py-3.5">
-                          <PermissionGuard permission="delete_transaction">
-                            <button type="button" onClick={() => setDeleteDialog({ open: true, id: t.id })}
-                              className="p-1.5 rounded-lg hover:bg-white/10 transition-colors" style={{ color: "#ef4444" }} title="Delete">
-                              <Trash2 size={14} />
-                            </button>
-                          </PermissionGuard>
+                          <div className="flex items-center gap-1">
+                            <PermissionGuard permission="edit_transaction">
+                              <button type="button" onClick={() => setEditTx(t)}
+                                className="p-1.5 rounded-lg hover:bg-white/10 transition-colors" style={{ color: BRAND.muted }} title="Edit">
+                                <Pencil size={14} />
+                              </button>
+                            </PermissionGuard>
+                            <PermissionGuard permission="delete_transaction">
+                              <button type="button" onClick={() => setDeleteDialog({ open: true, id: t.id })}
+                                className="p-1.5 rounded-lg hover:bg-white/10 transition-colors" style={{ color: "#ef4444" }} title="Delete">
+                                <Trash2 size={14} />
+                              </button>
+                            </PermissionGuard>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -172,6 +369,8 @@ export default function AdminTransactionsPage() {
 
       </div>
 
+      <AddTransactionSheet open={addOpen} onClose={() => setAddOpen(false)} categories={allCategories} />
+      <EditTransactionSheet tx={editTx} onClose={() => setEditTx(null)} categories={allCategories} />
       <ConfirmDialog
         open={deleteDialog.open}
         title="Delete Transaction"

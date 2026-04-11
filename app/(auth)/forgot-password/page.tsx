@@ -12,6 +12,7 @@ export default function ForgotPasswordPage() {
   const router = useRouter();
   const [step, setStep] = React.useState<1 | 2 | 3>(1); // 1=email, 2=reset form, 3=success
   const [email, setEmail] = React.useState("");
+  const [userId, setUserId] = React.useState<number | null>(null);
   const [token, setToken] = React.useState("");
   const [newPassword, setNewPassword] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
@@ -30,7 +31,8 @@ export default function ForgotPasswordPage() {
     if (!validateEmail(email)) { setError("Please enter a valid email address."); return; }
 
     try {
-      await sendToken({ email }).unwrap();
+      const result = await sendToken({ email }).unwrap();
+      setUserId(result?.data?.userId ?? null);
       setStep(2);
     } catch (err: unknown) {
       const msg =
@@ -48,7 +50,7 @@ export default function ForgotPasswordPage() {
     if (newPassword !== confirmPassword) { setError("Passwords do not match."); return; }
 
     try {
-      await resetPassword({ token, newPassword, confirmPassword }).unwrap();
+      await resetPassword({ userId: userId!, token, newPassword }).unwrap();
       setStep(3);
       setTimeout(() => router.push("/login"), 2500);
     } catch (err: unknown) {

@@ -39,10 +39,15 @@ export interface SendPasswordTokenRequest {
   email: string;
 }
 
+export interface SendPasswordTokenResponse {
+  success?: boolean;
+  data?: { userId?: number };
+}
+
 export interface ResetPasswordRequest {
+  userId: number;
   token: string;
   newPassword: string;
-  confirmPassword: string;
 }
 
 export interface ApiSession {
@@ -102,7 +107,7 @@ export const authApi = baseApi.injectEndpoints({
       }),
     }),
 
-    sendPasswordToken: builder.mutation<unknown, SendPasswordTokenRequest>({
+    sendPasswordToken: builder.mutation<SendPasswordTokenResponse, SendPasswordTokenRequest>({
       query: (body) => ({
         url: "/account/send-password-token",
         method: "POST",
