@@ -215,7 +215,7 @@ export default function TransactionsPage() {
               <span style={{ color: "#6B7280", fontSize: "12px", fontWeight: 600 }}>Total Income</span>
             </div>
             <div style={{ color: "#06D6A0", fontSize: "22px", fontWeight: 700 }}>
-              {summary ? `£${summary.totalIncome.toLocaleString()}` : <Skeleton />}
+              {summary ? `£${(summary.totalIncome ?? 0).toLocaleString()}` : <Skeleton />}
             </div>
           </div>
           <div style={cardStyle}>
@@ -226,7 +226,7 @@ export default function TransactionsPage() {
               <span style={{ color: "#6B7280", fontSize: "12px", fontWeight: 600 }}>Total Expenses</span>
             </div>
             <div style={{ color: "#ef4444", fontSize: "22px", fontWeight: 700 }}>
-              {summary ? `£${summary.totalExpenses.toLocaleString()}` : <Skeleton />}
+              {summary ? `£${(summary.totalExpenses ?? 0).toLocaleString()}` : <Skeleton />}
             </div>
           </div>
           <div style={cardStyle}>
@@ -236,8 +236,8 @@ export default function TransactionsPage() {
               </div>
               <span style={{ color: "#6B7280", fontSize: "12px", fontWeight: 600 }}>Net Profit</span>
             </div>
-            <div style={{ color: summary && summary.netProfit >= 0 ? "#06D6A0" : "#ef4444", fontSize: "22px", fontWeight: 700 }}>
-              {summary ? `£${summary.netProfit.toLocaleString()}` : <Skeleton />}
+            <div style={{ color: (summary?.netProfit ?? 0) >= 0 ? "#06D6A0" : "#ef4444", fontSize: "22px", fontWeight: 700 }}>
+              {summary ? `£${(summary.netProfit ?? 0).toLocaleString()}` : <Skeleton />}
             </div>
           </div>
         </div>

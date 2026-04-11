@@ -12,17 +12,21 @@ import { UploadDocumentSheet } from "./_components/upload-document-sheet";
 import { ConnectDataSheet } from "./_components/connect-data-sheet";
 import { FixActionSheet, FixType } from "./_components/fix-action-sheet";
 import { ComplianceBreakdown, ActionItem, KYCData, CompliancePassport } from "@/types/compliance";
-import { calculateTotal } from "@/lib/compliance/calculate-score";
+import {
+  useGetComplianceCentreDashboardQuery,
+  useSubmitKycMutation,
+  ComplianceSectionBreakdown,
+} from "@/lib/api/complianceCentreApi";
+import { useToast } from "@/components/shared/toast";
 
 // ── Mock compliance breakdown — fresh / zero state ───────────────────────────
 const MOCK_BREAKDOWN: ComplianceBreakdown = {
   identity: {
-    earned: 0, max: 20,
+    earned: 0, max: 15,
     passed: [],
     missing: [
       "Owner KYC not yet verified (0/8)",
       "Business KYB not started (0/7)",
-      "Director details not submitted (0/5)",
     ],
     action_label: "Start KYC Verification",
     action_type: "review",
@@ -39,13 +43,6 @@ const MOCK_BREAKDOWN: ComplianceBreakdown = {
         status: "fail", points: 0, max: 7,
         source: "Sumsub", source_type: "api",
         detail: "Business KYB not yet initiated. Required to verify the legal entity.",
-        checked_at: "2026-04-06T09:00:00Z",
-      },
-      {
-        label: "Beneficial owner / director details complete",
-        status: "fail", points: 0, max: 5,
-        source: "User submitted", source_type: "user_input",
-        detail: "Director details not yet submitted.",
         checked_at: "2026-04-06T09:00:00Z",
       },
     ],
@@ -122,14 +119,14 @@ const MOCK_BREAKDOWN: ComplianceBreakdown = {
         label: "Filing calendar configured",
         status: "fail", points: 0, max: 3,
         source: "Platform logic", source_type: "internal_logic",
-        detail: "No filing calendar set up. Connect your HMRC account to auto-populate obligations.",
+        detail: "No filing calendar set up. Connect HMRC (UK) or FIRS (Nigeria) to auto-populate obligations.",
         checked_at: "2026-04-06T08:00:00Z",
       },
       {
-        label: "Obligations synced from HMRC",
+        label: "Obligations synced from HMRC / FIRS",
         status: "fail", points: 0, max: 4,
-        source: "HMRC VAT API", source_type: "api",
-        detail: "VAT obligations not yet retrieved. Connect HMRC to sync open and overdue obligations.",
+        source: "HMRC / FIRS API", source_type: "api",
+        detail: "Tax obligations not yet retrieved. Connect HMRC (UK) or FIRS (Nigeria) to sync open and overdue obligations.",
         checked_at: "2026-04-06T08:00:00Z",
       },
     ],
@@ -276,72 +273,28 @@ const MOCK_BREAKDOWN: ComplianceBreakdown = {
   },
 };
 
-const MOCK_ACTIONS: ActionItem[] = [
-  {
-    id: "a1",
-    title: "Complete owner identity verification (KYC)",
-    description: "Verify your identity via Sumsub to unlock the identity score and start AML checks.",
-    action_type: "review",
-    priority: "high",
-    section: "identity",
-  },
-  {
-    id: "a2",
-    title: "Start business KYB verification",
-    description: "Submit your registration number and Certificate of Incorporation to verify your legal entity.",
-    action_type: "fix",
-    priority: "high",
-    section: "identity",
-  },
-  {
-    id: "a3",
-    title: "Connect bank account or import statement",
-    description: "Link your bank via TrueLayer (UK) or Mono (Nigeria) to import transactions and unlock the financial score.",
-    action_type: "connect",
-    priority: "high",
-    section: "financial",
-  },
-  {
-    id: "a4",
-    title: "Upload core compliance documents",
-    description: "Upload your Certificate of Incorporation, proof of registered address, and director ID.",
-    action_type: "upload",
-    priority: "high",
-    section: "documents",
-  },
-  {
-    id: "a5",
-    title: "Connect HMRC to sync tax obligations",
-    description: "Connect your HMRC account to automatically retrieve VAT obligations and populate your filing calendar.",
-    action_type: "connect",
-    priority: "medium",
-    due_date: "2026-04-30",
-    section: "tax",
-  },
-  {
-    id: "a6",
-    title: "Fix legal name mismatch",
-    description: "Your submitted company name differs from the Companies House record. Update to match exactly.",
-    action_type: "fix",
-    priority: "medium",
-    section: "registration",
-  },
-  {
-    id: "a7",
-    title: "Resolve open compliance alerts",
-    description: "Review and close open compliance alerts to start building your behaviour score.",
-    action_type: "fix",
-    priority: "medium",
-    section: "behaviour",
-  },
-];
-
 const SECTION_KEYS = [
   "identity", "registration", "tax", "financial", "risk", "documents", "behaviour",
 ] as const;
 
+// Maps API task category → ActionItem fields
+function mapCategory(category: string): Pick<ActionItem, "action_type" | "section"> {
+  switch (category) {
+    case "KYC":       return { action_type: "review",  section: "identity"  };
+    case "KYB":       return { action_type: "fix",     section: "identity"  };
+    case "Financial": return { action_type: "connect", section: "financial" };
+    case "Documents": return { action_type: "upload",  section: "documents" };
+    case "AML":       return { action_type: "review",  section: "risk"      };
+    default:          return { action_type: "fix",     section: "behaviour" };
+  }
+}
+
 export default function CompliancePage() {
-  const [breakdown] = useState<ComplianceBreakdown>(MOCK_BREAKDOWN);
+  const { data: centreData } = useGetComplianceCentreDashboardQuery();
+  const [submitKyc] = useSubmitKycMutation();
+  const { toast } = useToast();
+
+  const [openSectionKey, setOpenSectionKey] = useState<string | null>(null);
   const [requestReviewOpen, setRequestReviewOpen] = useState(false);
   const [kycOpen, setKycOpen] = useState(false);
   const [passportOpen, setPassportOpen] = useState(false);
@@ -353,33 +306,44 @@ export default function CompliancePage() {
   const [fixOpen, setFixOpen] = useState(false);
   const [fixType, setFixType] = useState<FixType>("reconcile");
 
-  const totalScore = calculateTotal(breakdown);
+  // Map API icon keys → section card keys
+  const ICON_TO_KEY: Record<string, keyof ComplianceBreakdown> = {
+    kyc:     "identity",
+    kyb:     "registration",
+    tax:     "tax",
+    bank:    "financial",
+    aml:     "risk",
+    docs:    "documents",
+    history: "behaviour",
+  };
+
+  // Build a lookup from section key → API section for the cards
+  const apiSectionMap: Partial<Record<keyof ComplianceBreakdown, ComplianceSectionBreakdown>> = {};
+  (centreData?.scoreBreakdown ?? []).forEach((s) => {
+    const key = ICON_TO_KEY[s.icon];
+    if (key) apiSectionMap[key] = s;
+  });
+
+  // Overall score = average of section scores (all maxScores are 100)
+  const scoreBreakdown = centreData?.scoreBreakdown ?? [];
+  const totalScore = scoreBreakdown.length > 0
+    ? Math.round(scoreBreakdown.reduce((sum, s) => sum + (s.score ?? 0), 0) / scoreBreakdown.length)
+    : 0;
+
   const manualReviewRequired = false; // would be driven by backend flags
 
+  const actionItems: ActionItem[] = (centreData?.tasks ?? [])
+    .filter((t) => t.status !== "Completed")
+    .map((t) => ({
+      id: String(t.id),
+      title: t.title,
+      description: t.description,
+      priority: t.priority.toLowerCase() as "high" | "medium" | "low",
+      ...mapCategory(t.category),
+    }));
+
   const handleAction = (item: ActionItem) => {
-    switch (item.action_type) {
-      case "upload":
-        setUploadDocType(item.section === "documents" ? "director_id" : "");
-        setUploadOpen(true);
-        break;
-      case "connect":
-        setConnectDefaultTab(item.section === "tax" ? "tax" : "bank");
-        setConnectOpen(true);
-        break;
-      case "fix":
-        if (item.section === "identity")      { setFixType("kyb");        setFixOpen(true); }
-        else if (item.section === "registration") { setFixType("name_match"); setFixOpen(true); }
-        else if (item.section === "financial" && item.id === "a6") { setFixType("categorise"); setFixOpen(true); }
-        else if (item.section === "financial") { setFixType("reconcile");  setFixOpen(true); }
-        else if (item.section === "behaviour") { setFixType("alerts");     setFixOpen(true); }
-        else                                   { setFixType("record_updates"); setFixOpen(true); }
-        return;
-      case "review":
-        if (item.section === "identity")      setKycOpen(true);
-        else if (item.section === "risk")     { setFixType("alerts_review"); setFixOpen(true); }
-        else if (item.section === "behaviour"){ setFixType("alerts");       setFixOpen(true); }
-        break;
-    }
+    setOpenSectionKey(item.section);
   };
 
   const handleSectionAction = (sectionKey: string, fixType?: string) => {
@@ -434,9 +398,26 @@ export default function CompliancePage() {
     }
   };
 
-  const handleKYCSubmit = async (_data: KYCData) => {
-    await new Promise((res) => setTimeout(res, 1500));
-    // Modal stays open - user clicks close/back button to dismiss
+  const handleKYCSubmit = async (data: KYCData) => {
+    try {
+      await submitKyc({
+        fullName: data.full_name,
+        dateOfBirth: data.dob,
+        nationality: data.nationality,
+        phoneNumber: "",
+        email: "",
+        residentialAddress: [data.address, data.city, data.postcode].filter(Boolean).join(", "),
+        idType: data.id_type === "passport" ? "Passport"
+              : data.id_type === "drivers_licence" ? "DriversLicence"
+              : "NationalId",
+        idNumber: data.id_number,
+        idExpiryDate: data.id_expiry,
+        idDocumentUrl: "",
+      }).unwrap();
+      toast({ title: "KYC submitted successfully", variant: "success" });
+    } catch {
+      toast({ title: "KYC submission failed. Please try again.", variant: "error" });
+    }
   };
 
   const handleGeneratePassport = async (): Promise<CompliancePassport> => {
@@ -489,8 +470,11 @@ export default function CompliancePage() {
               <SectionCard
                 key={key}
                 sectionKey={key}
-                section={breakdown[key]}
+                section={MOCK_BREAKDOWN[key]}
+                apiSection={apiSectionMap[key]}
                 onAction={(fixType) => handleSectionAction(key, fixType)}
+                externalOpen={openSectionKey === key}
+                onExternalClose={() => setOpenSectionKey(null)}
               />
             ))}
           </div>
@@ -499,7 +483,7 @@ export default function CompliancePage() {
         {/* Action queue */}
         <div id="action-queue" className="mb-8">
           <ActionQueue
-            items={MOCK_ACTIONS}
+            items={actionItems}
             onAction={handleAction}
           />
         </div>

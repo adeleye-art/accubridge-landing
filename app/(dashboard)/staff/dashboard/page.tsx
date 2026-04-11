@@ -3,16 +3,12 @@
 import {
   Users, ClipboardList, BarChart3, AlertTriangle,
   ArrowLeftRight, ShieldCheck, StickyNote, FileText, ArrowUpRight,
+  Loader2,
 } from "lucide-react";
+import { useGetClientsQuery } from "@/lib/api/clientApi";
+import { useGetComplianceCasesQuery } from "@/lib/api/complianceApi";
 
 const BRAND = { gold: "#D4AF37", accent: "#3E92CC", muted: "#6B7280", primary: "#0A2463" };
-
-const STATS = [
-  { label: "Assigned Clients",  value: "12", sub: "Under your care",   iconBg: "#1e3a6e", valueColor: "#3E92CC", icon: <Users size={20} className="text-white" />,        trend: "+2 this month",    trendUp: true  },
-  { label: "Pending Reviews",   value: "5",  sub: "Awaiting action",   iconBg: "#78350f", valueColor: "#D4AF37", icon: <ClipboardList size={20} className="text-white" />, trend: "3 overdue",        trendUp: false },
-  { label: "Reports Generated", value: "31", sub: "This month",        iconBg: "#064e3b", valueColor: "#06D6A0", icon: <BarChart3 size={20} className="text-white" />,     trend: "+8 vs last month", trendUp: true  },
-  { label: "Compliance Alerts", value: "2",  sub: "Require attention", iconBg: "#7f1d1d", valueColor: "#ef4444", icon: <AlertTriangle size={20} className="text-white" />, trend: "1 critical",       trendUp: false },
-];
 
 const QUICK_ACTIONS = [
   { label: "My Clients",          href: "/staff/clients",      icon: <Users size={20} />,            color: "#3E92CC" },
@@ -23,26 +19,40 @@ const QUICK_ACTIONS = [
   { label: "Request Documents",   href: "/staff/documents",    icon: <FileText size={20} />,          color: "#6B7280" },
 ];
 
-const ASSIGNED_CLIENTS = [
-  { name: "Apex Solutions Ltd", owner: "Jane Okonkwo",  score: 92, status: "Active",  pending: 0 },
-  { name: "Nova Consulting UK", owner: "Daniel Obi",    score: 78, status: "Active",  pending: 2 },
-  { name: "Bright Path Ltd",    owner: "Chidi Eze",     score: 65, status: "Active",  pending: 3 },
-  { name: "TechBridge NG Ltd",  owner: "Ade Adeyemi",   score: 45, status: "Pending", pending: 0 },
-];
-
 function scoreColor(s: number) {
   if (s >= 70) return "#06D6A0";
   if (s >= 40) return "#D4AF37";
   return "#ef4444";
 }
 
-function statusStyle(status: string) {
-  if (status === "Active")  return { color: "#06D6A0", bg: "rgba(6,214,160,0.1)"  };
-  if (status === "Pending") return { color: "#D4AF37", bg: "rgba(212,175,55,0.1)" };
-  return { color: "#6B7280", bg: "rgba(107,114,128,0.1)" };
+function statusStyle(statusValue: number) {
+  if (statusValue === 1) return { color: "#06D6A0", bg: "rgba(6,214,160,0.1)",   label: "Active"    };
+  if (statusValue === 0) return { color: "#D4AF37", bg: "rgba(212,175,55,0.1)",  label: "Pending"   };
+  return                        { color: "#6B7280", bg: "rgba(107,114,128,0.1)", label: "Suspended" };
+}
+
+function Skeleton({ className }: { className?: string }) {
+  return <div className={`animate-pulse rounded-lg ${className ?? ""}`} style={{ backgroundColor: "rgba(255,255,255,0.08)" }} />;
 }
 
 export default function StaffDashboard() {
+  const { data: clientData, isLoading: clientsLoading } = useGetClientsQuery({ pageSize: 10 });
+  const { data: complianceData, isLoading: complianceLoading } = useGetComplianceCasesQuery({ status: 0, pageSize: 1 });
+
+  const totalClients  = clientData?.totalCount ?? 0;
+  const pendingCount  = clientData?.summary?.pendingCount ?? 0;
+  const alertCount    = complianceData?.totalCount ?? 0;
+  const clients       = clientData?.clients ?? [];
+
+  const STATS = [
+    { label: "Assigned Clients",  value: String(totalClients), sub: "Under your care",   iconBg: "#1e3a6e", valueColor: "#3E92CC", icon: <Users size={20} className="text-white" />,        trend: `${clientData?.summary?.activeCount ?? 0} active`,  trendUp: true  },
+    { label: "Pending Reviews",   value: String(pendingCount), sub: "Awaiting action",   iconBg: "#78350f", valueColor: "#D4AF37", icon: <ClipboardList size={20} className="text-white" />, trend: pendingCount > 0 ? "Action required" : "All up to date", trendUp: pendingCount === 0 },
+    { label: "Reports Generated", value: "—",                  sub: "This month",        iconBg: "#064e3b", valueColor: "#06D6A0", icon: <BarChart3 size={20} className="text-white" />,     trend: "View reports",     trendUp: true  },
+    { label: "Compliance Alerts", value: String(alertCount),   sub: "Require attention", iconBg: "#7f1d1d", valueColor: "#ef4444", icon: <AlertTriangle size={20} className="text-white" />, trend: alertCount > 0 ? "Review now" : "All clear",         trendUp: alertCount === 0 },
+  ];
+
+  const isLoading = clientsLoading || complianceLoading;
+
   return (
     <div className="p-5 md:p-8 text-white">
       <div className="max-w-5xl mx-auto flex flex-col gap-6">
@@ -61,7 +71,10 @@ export default function StaffDashboard() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="text-sm mb-1" style={{ color: BRAND.muted }}>{s.label}</div>
-                  <div className="text-2xl font-bold" style={{ color: s.valueColor }}>{s.value}</div>
+                  {isLoading
+                    ? <Skeleton className="h-7 w-12 mt-1" />
+                    : <div className="text-2xl font-bold" style={{ color: s.valueColor }}>{s.value}</div>
+                  }
                   <div className="text-xs mt-1" style={{ color: BRAND.muted }}>{s.sub}</div>
                 </div>
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: s.iconBg }}>{s.icon}</div>
@@ -97,34 +110,40 @@ export default function StaffDashboard() {
             </a>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-                  {["Business", "Owner", "Score", "Status", "Pending Actions"].map((h) => (
-                    <th key={h} className="px-5 py-2.5 text-left text-xs font-medium" style={{ color: BRAND.muted }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {ASSIGNED_CLIENTS.map((c) => {
-                  const ss = statusStyle(c.status);
-                  return (
-                    <tr key={c.name} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                      <td className="px-5 py-3 font-medium">{c.name}</td>
-                      <td className="px-5 py-3 text-sm" style={{ color: "rgba(255,255,255,0.7)" }}>{c.owner}</td>
-                      <td className="px-5 py-3 font-bold" style={{ color: scoreColor(c.score) }}>{c.score}</td>
-                      <td className="px-5 py-3"><span className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ color: ss.color, backgroundColor: ss.bg }}>{c.status}</span></td>
-                      <td className="px-5 py-3">
-                        {c.pending > 0
-                          ? <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ color: "#D4AF37", backgroundColor: "rgba(212,175,55,0.1)" }}>{c.pending} pending</span>
-                          : <span className="text-xs" style={{ color: BRAND.muted }}>—</span>
-                        }
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            {isLoading ? (
+              <div className="flex items-center justify-center gap-2 py-12">
+                <Loader2 size={16} className="animate-spin" style={{ color: BRAND.accent }} />
+                <span className="text-sm" style={{ color: BRAND.muted }}>Loading clients…</span>
+              </div>
+            ) : clients.length === 0 ? (
+              <p className="text-sm text-center py-12" style={{ color: BRAND.muted }}>No clients assigned yet.</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                    {["Business", "Owner", "Score", "Status", "Staff"].map((h) => (
+                      <th key={h} className="px-5 py-2.5 text-left text-xs font-medium" style={{ color: BRAND.muted }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {clients.map((c) => {
+                    const ss = statusStyle(c.statusValue);
+                    return (
+                      <tr key={c.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                        <td className="px-5 py-3 font-medium">{c.businessName}</td>
+                        <td className="px-5 py-3 text-sm" style={{ color: "rgba(255,255,255,0.7)" }}>{c.ownerName}</td>
+                        <td className="px-5 py-3 font-bold" style={{ color: scoreColor(c.score) }}>{c.score}</td>
+                        <td className="px-5 py-3"><span className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ color: ss.color, backgroundColor: ss.bg }}>{ss.label}</span></td>
+                        <td className="px-5 py-3 text-xs" style={{ color: BRAND.muted }}>
+                          {c.assignedStaffName ?? "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
 

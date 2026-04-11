@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { PageHeader } from "@/components/shared/page-header";
 import { SettingsNav } from "./_components/settings-nav";
 import { ProfileSection } from "./_components/profile-section";
@@ -18,6 +18,10 @@ import {
   NotificationSettings,
   SubscriptionInfo,
 } from "@/types/settings";
+import {
+  useGetNotificationPreferencesQuery,
+  useUpdateNotificationPreferencesMutation,
+} from "@/lib/api/notificationApi";
 
 // ── Mock data ──────────────────────────────────────────────────────────────────
 const MOCK_PROFILE: ProfileSettings = {
@@ -104,11 +108,27 @@ export default function SettingsPage() {
   const [activeSection, setActiveSection] =
     useState<SettingsSection>("profile");
 
+  // API hooks
+  const { data: apiPrefs } = useGetNotificationPreferencesQuery();
+  const [updatePrefs, { isLoading: savingPrefs }] = useUpdateNotificationPreferencesMutation();
+
   // Editable state
   const [profile, setProfile] = useState<ProfileSettings>(MOCK_PROFILE);
   const [business, setBusiness] = useState<BusinessData>(MOCK_BUSINESS);
   const [notifications, setNotifs] =
     useState<NotificationSettings>(MOCK_NOTIFICATIONS);
+
+  // Seed notifications from API when loaded
+  useEffect(() => {
+    if (!apiPrefs) return;
+    setNotifs((prev) => ({
+      ...prev,
+      email_compliance_alerts: apiPrefs.complianceAlert,
+      inapp_compliance: apiPrefs.complianceAlert,
+      email_funding_updates: apiPrefs.fundingSubmitted,
+      inapp_funding: apiPrefs.fundingSubmitted,
+    }));
+  }, [apiPrefs]);
 
   // Original snapshots for dirty detection
   const [origProfile] = useState<ProfileSettings>(MOCK_PROFILE);
@@ -136,6 +156,24 @@ export default function SettingsPage() {
     (activeSection === "notifications" && isNotifsDirty);
 
   const handleSave = async () => {
+    if (activeSection === "notifications") {
+      setIsSaving(true);
+      try {
+        await updatePrefs({
+          newClientSignup: false,
+          staffAction: false,
+          complianceAlert: notifications.email_compliance_alerts || notifications.inapp_compliance,
+          fundingSubmitted: notifications.email_funding_updates || notifications.inapp_funding,
+        }).unwrap();
+        setToast({ message: "Notification preferences saved", type: "success" });
+      } catch {
+        setToast({ message: "Failed to save preferences. Please try again.", type: "error" });
+      } finally {
+        setIsSaving(false);
+      }
+      return;
+    }
+    // Profile and business sections have no API endpoint yet
     setIsSaving(true);
     await new Promise((res) => setTimeout(res, 900));
     setIsSaving(false);
@@ -224,7 +262,7 @@ export default function SettingsPage() {
             {showSaveBar && (
               <SettingsSaveBar
                 isDirty={isDirty}
-                isSaving={isSaving}
+                isSaving={isSaving || savingPrefs}
                 onSave={handleSave}
                 onDiscard={handleDiscard}
               />

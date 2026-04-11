@@ -38,10 +38,6 @@ export default function OnboardingPage() {
   useEffect(() => {
     const saved = loadOnboardingProgress();
     if (saved) {
-      if (saved.onboarding_complete) {
-        router.replace("/client/dashboard");
-        return;
-      }
       setProgress(saved);
     }
     setIsLoaded(true);

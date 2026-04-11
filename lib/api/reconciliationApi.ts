@@ -117,7 +117,8 @@ export const reconciliationApi = baseApi.injectEndpoints({
         method: "POST",
         body: formData,
       }),
-      transformResponse: (res: { success: boolean; data: ReconciliationDetail }) => res.data,
+      transformResponse: (res: { success: boolean; data: ReconciliationDetail } | ReconciliationDetail) =>
+        "data" in res && res.data ? (res as { success: boolean; data: ReconciliationDetail }).data : res as ReconciliationDetail,
       invalidatesTags: ["Reconciliation"],
     }),
 

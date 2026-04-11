@@ -9,6 +9,7 @@ import {
 import { SectionScore, EvidenceCheck } from "@/types/compliance";
 import { getSectionHex } from "@/lib/compliance/calculate-score";
 import { SystemSheet } from "@/components/shared/system-sheet";
+import { ComplianceSectionBreakdown } from "@/lib/api/complianceCentreApi";
 
 const BRAND = { primary: "#0A2463", gold: "#D4AF37", green: "#06D6A0", accent: "#3E92CC", muted: "#6B7280" };
 
@@ -38,6 +39,36 @@ const SECTION_TITLES: Record<string, string> = {
   documents:    "Documents",
   behaviour:    "Operating History",
 };
+
+// Maps API icon → action type for the CTA button icon
+const ICON_TO_ACTION_TYPE: Record<string, string> = {
+  kyc:     "review",
+  kyb:     "fix",
+  tax:     "connect",
+  bank:    "connect",
+  aml:     "review",
+  docs:    "upload",
+  history: "fix",
+};
+
+function statusBadge(status: string) {
+  const map: Record<string, { label: string; color: string; bg: string }> = {
+    "Verified":    { label: "Verified",     color: "#06D6A0", bg: "rgba(6,214,160,0.12)"   },
+    "Active":      { label: "Active",       color: "#06D6A0", bg: "rgba(6,214,160,0.12)"   },
+    "UnderReview": { label: "Under Review", color: "#D4AF37", bg: "rgba(212,175,55,0.12)"  },
+    "InProgress":  { label: "In Progress",  color: "#3E92CC", bg: "rgba(62,146,204,0.12)"  },
+    "Not Started": { label: "Not Started",  color: "#6B7280", bg: "rgba(107,114,128,0.12)" },
+  };
+  const s = map[status] ?? map["Not Started"];
+  return (
+    <span
+      className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+      style={{ color: s.color, backgroundColor: s.bg }}
+    >
+      {s.label}
+    </span>
+  );
+}
 
 const SOURCE_TYPE_LABEL: Record<string, string> = {
   api:            "External API",
@@ -81,8 +112,8 @@ function CheckRow({ check, sectionKey, onAction }: { check: EvidenceCheck; secti
     if (sectionKey === "tax") {
       if (check.label.includes("Tax ID")) return { label: "Add Tax ID", type: "tax_id" };
       if (check.label.includes("VAT")) return { label: "Declare VAT", type: "vat_setup" };
-      if (check.label.includes("Filing calendar")) return { label: "Connect HMRC", type: "hmrc_connect" };
-      if (check.label.includes("Obligations")) return { label: "Sync HMRC", type: "hmrc_sync" };
+      if (check.label.includes("Filing calendar")) return { label: "Connect HMRC / FIRS", type: "hmrc_connect" };
+      if (check.label.includes("Obligations")) return { label: "Sync HMRC / FIRS", type: "hmrc_sync" };
     }
 
     // Financial Records
@@ -179,12 +210,22 @@ interface SectionCardProps {
   sectionKey: string;
   section: SectionScore;
   onAction: (fixType?: string) => void;
+  apiSection?: ComplianceSectionBreakdown;
+  externalOpen?: boolean;
+  onExternalClose?: () => void;
 }
 
-export function SectionCard({ sectionKey, section, onAction }: SectionCardProps) {
+export function SectionCard({ sectionKey, section, onAction, apiSection, externalOpen, onExternalClose }: SectionCardProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const accentColor = getSectionHex(section.earned, section.max);
-  const pct = Math.round((section.earned / section.max) * 100);
+
+  // Prefer live API values; fall back to static structure for checks/labels
+  const earned      = apiSection !== undefined ? (apiSection.score ?? 0) : section.earned;
+  const max         = apiSection !== undefined ? apiSection.maxScore      : section.max;
+  const actionLabel = apiSection?.actionLabel ?? section.action_label;
+  const actionType  = apiSection ? (ICON_TO_ACTION_TYPE[apiSection.icon] ?? section.action_type) : section.action_type;
+
+  const accentColor = getSectionHex(earned, max);
+  const pct = max > 0 ? Math.round((earned / max) * 100) : 0;
   const icon = SECTION_ICONS[sectionKey];
   const title = SECTION_TITLES[sectionKey];
 
@@ -207,10 +248,13 @@ export function SectionCard({ sectionKey, section, onAction }: SectionCardProps)
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-sm font-bold text-white truncate">{title}</div>
+            {apiSection && (
+              <div className="mt-0.5">{statusBadge(apiSection.status)}</div>
+            )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            <span className="text-base font-extrabold" style={{ color: accentColor }}>{section.earned}</span>
-            <span className="text-xs" style={{ color: BRAND.muted }}>/ {section.max}</span>
+            <span className="text-base font-extrabold" style={{ color: accentColor }}>{earned}</span>
+            <span className="text-xs" style={{ color: BRAND.muted }}>/ {max}</span>
             <ChevronRight size={14} style={{ color: BRAND.muted }} className="group-hover:translate-x-0.5 transition-transform" />
           </div>
         </div>
@@ -250,20 +294,18 @@ export function SectionCard({ sectionKey, section, onAction }: SectionCardProps)
         )}
 
         {/* CTA */}
-        {section.missing.length > 0 && (
-          <div
-            className="mx-5 mb-5 mt-auto"
-            onClick={(e) => { e.stopPropagation(); onAction(); }}
-          >
+        {(section.missing.length > 0 || apiSection) && (
+          <div className="mx-5 mb-5 mt-auto">
             <button
               type="button"
+              onClick={(e) => { e.stopPropagation(); setDrawerOpen(true); }}
               className="w-full flex items-center justify-center gap-1.5 h-9 rounded-xl text-xs font-semibold transition-all duration-200"
               style={{ backgroundColor: `${accentColor}15`, color: accentColor, border: `1px solid ${accentColor}30` }}
               onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${accentColor}25`; }}
               onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = `${accentColor}15`; }}
             >
-              {ACTION_ICONS[section.action_type]}
-              {section.action_label}
+              {ACTION_ICONS[actionType]}
+              {actionLabel}
             </button>
           </div>
         )}
@@ -271,10 +313,10 @@ export function SectionCard({ sectionKey, section, onAction }: SectionCardProps)
 
       {/* Evidence / Source drawer */}
       <SystemSheet
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
+        open={drawerOpen || !!externalOpen}
+        onClose={() => { setDrawerOpen(false); onExternalClose?.(); }}
         title={title}
-        description={`${section.earned} / ${section.max} points · ${pct}% complete`}
+        description={`${earned} / ${max} points · ${pct}% complete`}
         width={520}
       >
         <div className="flex flex-col gap-5">
@@ -291,10 +333,13 @@ export function SectionCard({ sectionKey, section, onAction }: SectionCardProps)
               {icon}
             </div>
             <div className="flex-1">
-              <div className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: BRAND.muted }}>Section Score</div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: BRAND.muted }}>Section Score</span>
+                {apiSection && statusBadge(apiSection.status)}
+              </div>
               <div className="flex items-end gap-1">
-                <span className="text-3xl font-extrabold" style={{ color: accentColor }}>{section.earned}</span>
-                <span className="text-base mb-0.5" style={{ color: BRAND.muted }}>/ {section.max}</span>
+                <span className="text-3xl font-extrabold" style={{ color: accentColor }}>{earned}</span>
+                <span className="text-base mb-0.5" style={{ color: BRAND.muted }}>/ {max}</span>
               </div>
               <div className="mt-1.5 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: "rgba(255,255,255,0.07)" }}>
                 <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: accentColor }} />
@@ -358,8 +403,8 @@ export function SectionCard({ sectionKey, section, onAction }: SectionCardProps)
 
         </div>
 
-        {/* Footer CTA if missing items */}
-        {section.missing.length > 0 && (
+        {/* Footer CTA */}
+        {(section.missing.length > 0 || apiSection) && (
           <div className="mt-6 pt-5 border-t" style={{ borderColor: "rgba(255,255,255,0.08)" }}>
             <button
               type="button"
@@ -369,8 +414,8 @@ export function SectionCard({ sectionKey, section, onAction }: SectionCardProps)
               onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.9"; }}
               onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
             >
-              {ACTION_ICONS[section.action_type]}
-              {section.action_label}
+              {ACTION_ICONS[actionType]}
+              {actionLabel}
             </button>
           </div>
         )}

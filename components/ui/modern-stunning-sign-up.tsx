@@ -85,7 +85,7 @@ const SignUp = () => {
         confirmPassword: form.confirmPassword,
         phoneNo: form.phoneNo.trim(),
         country: form.country,
-        role: 1,
+        role: 3,
       }).unwrap();
       router.push("/onboarding");
     } catch (err: unknown) {

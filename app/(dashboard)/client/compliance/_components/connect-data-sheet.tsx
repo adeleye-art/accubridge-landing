@@ -3,19 +3,21 @@
 import React, { useState } from "react";
 import { SystemSheet } from "@/components/shared/system-sheet";
 import { Link2, CheckCircle2, Loader2, Building, Calculator, ExternalLink } from "lucide-react";
+import { useConnectBankMutation, useConnectTaxMutation } from "@/lib/api/complianceCentreApi";
+import { useToast } from "@/components/shared/toast";
 
 const BRAND = { primary: "#0A2463", gold: "#D4AF37", green: "#06D6A0", accent: "#3E92CC", muted: "#6B7280" };
 
 type TabKey = "bank" | "tax";
 
 const BANK_PROVIDERS = [
-  { id: "truelayer", name: "TrueLayer", desc: "Connect UK bank accounts — Barclays, HSBC, Lloyds, NatWest, Monzo, and 60+ banks", flag: "🇬🇧", color: BRAND.accent },
-  { id: "mono",      name: "Mono",      desc: "Connect Nigerian bank accounts — GTBank, Access, Zenith, First Bank, and 30+ institutions", flag: "🇳🇬", color: BRAND.green },
+  { id: "truelayer", name: "TrueLayer", provider: "TrueLayer", jurisdiction: "GB", desc: "Connect UK bank accounts — Barclays, HSBC, Lloyds, NatWest, Monzo, and 60+ banks", flag: "🇬🇧", color: BRAND.accent },
+  { id: "mono",      name: "Mono",      provider: "Mono",       jurisdiction: "NG", desc: "Connect Nigerian bank accounts — GTBank, Access, Zenith, First Bank, and 30+ institutions", flag: "🇳🇬", color: BRAND.green },
 ];
 
 const TAX_PROVIDERS = [
-  { id: "hmrc",    name: "HMRC VAT API",   desc: "Sync VAT obligations, returns, liabilities, and filing calendar for UK businesses", flag: "🇬🇧", color: BRAND.accent },
-  { id: "firs",    name: "FIRS (Nigeria)", desc: "Connect Nigerian tax filings and obligations via FIRS integration", flag: "🇳🇬", color: BRAND.green },
+  { id: "hmrc", name: "HMRC VAT API",   provider: "HMRC", jurisdiction: "GB", desc: "Sync VAT obligations, returns, liabilities, and filing calendar for UK businesses", flag: "🇬🇧", color: BRAND.accent },
+  { id: "firs", name: "FIRS (Nigeria)", provider: "FIRS", jurisdiction: "NG", desc: "Connect Nigerian tax filings and obligations via FIRS integration", flag: "🇳🇬", color: BRAND.green },
 ];
 
 interface ConnectDataSheetProps {
@@ -25,15 +27,34 @@ interface ConnectDataSheetProps {
 }
 
 export function ConnectDataSheet({ isOpen, onClose, defaultTab = "bank" }: ConnectDataSheetProps) {
-  const [tab, setTab] = useState<TabKey>(defaultTab);
+  const [tab, setTab]             = useState<TabKey>(defaultTab);
   const [connecting, setConnecting] = useState<string | null>(null);
-  const [connected, setConnected] = useState<string[]>([]);
+  const [connected, setConnected]   = useState<string[]>([]);
+
+  const { toast } = useToast();
+  const [connectBank] = useConnectBankMutation();
+  const [connectTax]  = useConnectTaxMutation();
 
   const handleConnect = async (id: string) => {
+    const bankProvider = BANK_PROVIDERS.find((p) => p.id === id);
+    const taxProvider  = TAX_PROVIDERS.find((p) => p.id === id);
+    const providerInfo = bankProvider ?? taxProvider;
+    if (!providerInfo) return;
+
     setConnecting(id);
-    await new Promise((res) => setTimeout(res, 2000));
-    setConnected((prev) => [...prev, id]);
-    setConnecting(null);
+    try {
+      if (tab === "bank" && bankProvider) {
+        await connectBank({ provider: bankProvider.provider, jurisdiction: bankProvider.jurisdiction }).unwrap();
+      } else if (tab === "tax" && taxProvider) {
+        await connectTax({ provider: taxProvider.provider, jurisdiction: taxProvider.jurisdiction }).unwrap();
+      }
+      setConnected((prev) => [...prev, id]);
+      toast({ title: `${providerInfo.name} connected successfully`, variant: "success" });
+    } catch {
+      toast({ title: `Failed to connect ${providerInfo.name}`, variant: "error" });
+    } finally {
+      setConnecting(null);
+    }
   };
 
   const providers = tab === "bank" ? BANK_PROVIDERS : TAX_PROVIDERS;

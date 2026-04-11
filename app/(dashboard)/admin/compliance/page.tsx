@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import {
   Search, AlertTriangle, CheckCircle, Clock, FileX, Banknote,
   Database, ChevronRight, Shield, NotepadText, History, Gavel,
-  TriangleAlert, X, Plus, Trash2,
+  TriangleAlert, X, Plus, Trash2, FileText,
 } from "lucide-react";
 import { PermissionGuard } from "@/components/auth/permission-guard";
 import { SystemSheet } from "@/components/shared/system-sheet";
@@ -12,6 +12,7 @@ import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useToast } from "@/components/shared/toast";
 import { useGetComplianceCasesQuery, useUpdateComplianceCaseMutation, type ApiComplianceCase } from "@/lib/api/complianceApi";
 import { useGetInternalNotesQuery, useCreateInternalNoteMutation, useDeleteInternalNoteMutation } from "@/lib/api/internalNoteApi";
+import { useCreateDocumentRequestMutation } from "@/lib/api/documentRequestApi";
 
 const BRAND = { gold: "#D4AF37", accent: "#3E92CC", muted: "#6B7280", primary: "#0A2463", green: "#06D6A0", red: "#ef4444", amber: "#f59e0b" };
 
@@ -40,6 +41,17 @@ const STATUS_TO_API: Record<DecisionStatus, number> = {
   open: 0, action_required: 1, approved: 2, escalated: 3, rejected: 2,
 };
 
+// Document type enum matching API
+const DOC_TYPES: Array<{ value: number; label: string }> = [
+  { value: 0, label: "Certificate of Incorporation" },
+  { value: 1, label: "Bank Statement" },
+  { value: 2, label: "VAT Certificate" },
+  { value: 3, label: "Proof of Address" },
+  { value: 4, label: "Tax Return" },
+  { value: 5, label: "Financial Statements" },
+  { value: 6, label: "Other" },
+];
+
 function scoreColor(score: number) {
   if (score >= 85) return BRAND.green;
   if (score >= 70) return "#22c55e";
@@ -51,7 +63,7 @@ function urgencyStyle(u: Urgency) {
   switch (u) {
     case "high":   return { color: BRAND.amber, bg: "rgba(245,158,11,0.12)", label: "High" };
     case "medium": return { color: BRAND.gold,  bg: "rgba(212,175,55,0.12)", label: "Medium" };
-    case "low":    return { color: BRAND.green, bg: "rgba(6,214,160,0.12)",  label: "Low" };
+    case "low":    return { color: BRAND.green,  bg: "rgba(6,214,160,0.12)",  label: "Low" };
   }
 }
 
@@ -75,13 +87,13 @@ const REASON_LABELS: Record<ReviewReason, { label: string; icon: React.ReactNode
 };
 
 const FILTER_TABS: Array<{ key: ReviewReason | "all"; label: string }> = [
-  { key: "all",           label: "All" },
-  { key: "high_risk",     label: "High Risk" },
-  { key: "pending_review",label: "Pending Review" },
-  { key: "doc_mismatch",  label: "Doc Mismatch" },
-  { key: "overdue_tax",   label: "Overdue Tax" },
-  { key: "funding_review",label: "Funding Review" },
-  { key: "stale_data",    label: "Stale Data" },
+  { key: "all",            label: "All" },
+  { key: "high_risk",      label: "High Risk" },
+  { key: "pending_review", label: "Pending Review" },
+  { key: "doc_mismatch",   label: "Doc Mismatch" },
+  { key: "overdue_tax",    label: "Overdue Tax" },
+  { key: "funding_review", label: "Funding Review" },
+  { key: "stale_data",     label: "Stale Data" },
 ];
 
 function Skeleton({ className }: { className?: string }) {
@@ -89,7 +101,7 @@ function Skeleton({ className }: { className?: string }) {
 }
 
 // ─── Case Sheet ───────────────────────────────────────────────────────────────
-type CaseTab = "summary" | "actions" | "notes";
+type CaseTab = "summary" | "actions" | "notes" | "documents";
 
 function CaseSheet({ open, caseItem, onClose }: {
   open: boolean; caseItem: ApiComplianceCase | null; onClose: () => void;
@@ -97,29 +109,40 @@ function CaseSheet({ open, caseItem, onClose }: {
   const [activeTab, setActiveTab] = useState<CaseTab>("summary");
   const [note, setNote] = useState("");
   const [freezeConfirm, setFreezeConfirm] = useState(false);
+
+  // Urgency — allow changing within the review
+  const [selectedUrgency, setSelectedUrgency] = useState<Urgency | null>(null);
+
   const { toast } = useToast();
 
   const [updateCase, { isLoading: updating }] = useUpdateComplianceCaseMutation();
   const { data: notesData, isLoading: notesLoading } = useGetInternalNotesQuery(
     { clientId: caseItem?.clientId },
-    { skip: !caseItem || activeTab !== "notes" }
+    { skip: !caseItem || activeTab !== "notes" },
   );
   const [createNote, { isLoading: creatingNote }] = useCreateInternalNoteMutation();
   const [deleteNote] = useDeleteInternalNoteMutation();
 
+  // Document request state
+  const [docType, setDocType]     = useState<number>(0);
+  const [dueDate, setDueDate]     = useState("");
+  const [docMessage, setDocMessage] = useState("");
+  const [createDocRequest, { isLoading: sendingDocRequest }] = useCreateDocumentRequestMutation();
+
   if (!caseItem) return null;
 
-  const urgency = URGENCY_FROM_API[caseItem.urgency] ?? "medium";
-  const decision = STATUS_FROM_API[caseItem.status] ?? "open";
-  const reason = REASON_FROM_API[caseItem.reason] ?? "pending_review";
-  const urg = urgencyStyle(urgency);
-  const dec = decisionStyle(decision);
-  const sc = scoreColor(caseItem.clientScore);
+  const urgency   = selectedUrgency ?? (URGENCY_FROM_API[caseItem.urgency] ?? "medium");
+  const decision  = STATUS_FROM_API[caseItem.status] ?? "open";
+  const reason    = REASON_FROM_API[caseItem.reason] ?? "pending_review";
+  const urg       = urgencyStyle(urgency);
+  const dec       = decisionStyle(decision);
+  const sc        = scoreColor(caseItem.clientScore);
 
   const tabs: Array<{ key: CaseTab; label: string; icon: React.ReactNode }> = [
-    { key: "summary", label: "Case",    icon: <Shield size={13} /> },
-    { key: "actions", label: "Review",  icon: <Gavel size={13} /> },
-    { key: "notes",   label: "Notes",   icon: <History size={13} /> },
+    { key: "summary",   label: "Case",      icon: <Shield size={13} />   },
+    { key: "actions",   label: "Review",    icon: <Gavel size={13} />    },
+    { key: "notes",     label: "Notes",     icon: <History size={13} />  },
+    { key: "documents", label: "Documents", icon: <FileText size={13} /> },
   ];
 
   const handleDecision = async (newDecision: DecisionStatus) => {
@@ -130,14 +153,24 @@ function CaseSheet({ open, caseItem, onClose }: {
     try {
       await updateCase({
         id: caseItem.id,
-        body: { status: STATUS_TO_API[newDecision], urgency: URGENCY_TO_API[urgency], notes: note || undefined },
+        body: {
+          status:  STATUS_TO_API[newDecision],
+          urgency: URGENCY_TO_API[urgency],
+          notes:   note || undefined,
+        },
       }).unwrap();
       const labels: Record<DecisionStatus, string> = {
         approved: "Case approved", action_required: "Action required set",
         escalated: "Case escalated", rejected: "Case closed", open: "Case reopened",
       };
-      toast({ title: labels[newDecision], variant: newDecision === "approved" ? "success" : newDecision === "escalated" || newDecision === "rejected" ? "error" : "warning" });
+      toast({
+        title: labels[newDecision],
+        variant: newDecision === "approved" ? "success"
+          : newDecision === "escalated" || newDecision === "rejected" ? "error"
+          : "warning",
+      });
       setNote("");
+      setSelectedUrgency(null);
       onClose();
     } catch {
       toast({ title: "Failed to update case", variant: "error" });
@@ -155,6 +188,26 @@ function CaseSheet({ open, caseItem, onClose }: {
     }
   };
 
+  const handleRequestDocument = async () => {
+    if (!dueDate) {
+      toast({ title: "Please set a due date", variant: "warning" });
+      return;
+    }
+    try {
+      await createDocRequest({
+        clientId:     caseItem.clientId,
+        documentType: docType,
+        dueDate:      new Date(dueDate).toISOString(),
+        message:      docMessage || undefined,
+      }).unwrap();
+      toast({ title: "Document request sent to client", variant: "success" });
+      setDocMessage("");
+      setDueDate("");
+    } catch {
+      toast({ title: "Failed to send document request", variant: "error" });
+    }
+  };
+
   return (
     <SystemSheet open={open} title={caseItem.businessName} description={`Case opened ${caseItem.openedAtFormatted}`} onClose={onClose} width={680}>
       {/* Tabs */}
@@ -168,7 +221,7 @@ function CaseSheet({ open, caseItem, onClose }: {
         ))}
       </div>
 
-      {/* Panel 1 — Case Summary */}
+      {/* ── Panel 1: Case Summary ─────────────────────────────────────────────── */}
       {activeTab === "summary" && (
         <div className="flex flex-col gap-5">
           {/* Score card */}
@@ -189,10 +242,10 @@ function CaseSheet({ open, caseItem, onClose }: {
           {/* Case details */}
           <div className="grid grid-cols-2 gap-3">
             {[
-              { label: "Business",    value: caseItem.businessName },
+              { label: "Business",      value: caseItem.businessName },
               { label: "Review Reason", value: REASON_LABELS[reason]?.label ?? caseItem.reason },
-              { label: "Opened",      value: caseItem.openedAtFormatted },
-              { label: "Reviewer",    value: caseItem.assignedReviewerName ?? "Unassigned" },
+              { label: "Opened",        value: caseItem.openedAtFormatted },
+              { label: "Reviewer",      value: caseItem.assignedReviewerName ?? "Unassigned" },
             ].map((f) => (
               <div key={f.label} className="rounded-xl p-3 border" style={{ backgroundColor: "rgba(255,255,255,0.03)", borderColor: "rgba(255,255,255,0.07)" }}>
                 <div className="text-xs mb-0.5" style={{ color: BRAND.muted }}>{f.label}</div>
@@ -201,7 +254,6 @@ function CaseSheet({ open, caseItem, onClose }: {
             ))}
           </div>
 
-          {/* Notes from API */}
           {caseItem.notes && (
             <div className="rounded-xl p-4 border" style={{ backgroundColor: "rgba(62,146,204,0.06)", borderColor: "rgba(62,146,204,0.2)" }}>
               <div className="text-xs font-semibold mb-1" style={{ color: BRAND.accent }}>Case Notes</div>
@@ -211,9 +263,31 @@ function CaseSheet({ open, caseItem, onClose }: {
         </div>
       )}
 
-      {/* Panel 2 — Review Actions */}
+      {/* ── Panel 2: Review Actions ───────────────────────────────────────────── */}
       {activeTab === "actions" && (
         <div className="flex flex-col gap-5">
+          {/* Urgency selector */}
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: BRAND.muted }}>Urgency Level</div>
+            <div className="flex gap-2">
+              {(["low", "medium", "high"] as Urgency[]).map((u) => {
+                const s = urgencyStyle(u);
+                return (
+                  <button key={u} type="button" onClick={() => setSelectedUrgency(u)}
+                    className="flex-1 py-2 rounded-xl text-xs font-semibold capitalize transition-all border"
+                    style={{
+                      backgroundColor: urgency === u ? s.bg : "transparent",
+                      borderColor:     urgency === u ? s.color : "rgba(255,255,255,0.12)",
+                      color:           urgency === u ? s.color : "rgba(255,255,255,0.4)",
+                    }}>
+                    {s.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Note field */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: BRAND.muted }}>
               <NotepadText size={11} className="inline mr-1" /> Reviewer Note (required for most decisions)
@@ -224,6 +298,7 @@ function CaseSheet({ open, caseItem, onClose }: {
               style={{ backgroundColor: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", lineHeight: "1.6" }} />
           </div>
 
+          {/* Decision buttons */}
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: BRAND.muted }}>Review Decision</div>
             <div className="grid grid-cols-2 gap-2">
@@ -260,10 +335,9 @@ function CaseSheet({ open, caseItem, onClose }: {
         </div>
       )}
 
-      {/* Panel 3 — Internal Notes */}
+      {/* ── Panel 3: Internal Notes ───────────────────────────────────────────── */}
       {activeTab === "notes" && (
         <div className="flex flex-col gap-4">
-          {/* Add note */}
           <div className="flex gap-2">
             <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)}
               placeholder="Add an internal note…"
@@ -298,6 +372,66 @@ function CaseSheet({ open, caseItem, onClose }: {
         </div>
       )}
 
+      {/* ── Panel 4: Request Documents ────────────────────────────────────────── */}
+      {activeTab === "documents" && (
+        <div className="flex flex-col gap-5">
+          <div className="rounded-xl p-4 border text-sm" style={{ backgroundColor: "rgba(62,146,204,0.06)", borderColor: "rgba(62,146,204,0.2)", color: "rgba(255,255,255,0.7)" }}>
+            Request a specific document from <strong className="text-white">{caseItem.businessName}</strong>. The client will be notified and prompted to upload it.
+          </div>
+
+          {/* Document type */}
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: BRAND.muted }}>Document Type</label>
+            <div className="grid grid-cols-2 gap-2">
+              {DOC_TYPES.map((dt) => (
+                <button key={dt.value} type="button" onClick={() => setDocType(dt.value)}
+                  className="py-2.5 px-3 rounded-xl text-xs font-medium text-left transition-all border"
+                  style={{
+                    backgroundColor: docType === dt.value ? `${BRAND.gold}18` : "rgba(255,255,255,0.03)",
+                    borderColor:     docType === dt.value ? BRAND.gold : "rgba(255,255,255,0.1)",
+                    color:           docType === dt.value ? BRAND.gold : "rgba(255,255,255,0.6)",
+                  }}>
+                  {dt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Due date */}
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: BRAND.muted }}>Due Date</label>
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              min={new Date().toISOString().split("T")[0]}
+              className="w-full rounded-xl px-3 py-2.5 text-sm text-white outline-none"
+              style={{ backgroundColor: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)" }}
+            />
+          </div>
+
+          {/* Message */}
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: BRAND.muted }}>Message to Client (optional)</label>
+            <textarea rows={3} value={docMessage} onChange={(e) => setDocMessage(e.target.value)}
+              placeholder="e.g. Please upload a clear, certified copy…"
+              className="w-full rounded-xl px-3 py-2.5 text-sm text-white outline-none resize-none"
+              style={{ backgroundColor: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)" }} />
+          </div>
+
+          <button
+            type="button"
+            onClick={handleRequestDocument}
+            disabled={sendingDocRequest || !dueDate}
+            className="flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-opacity hover:opacity-90 disabled:opacity-50"
+            style={{ backgroundColor: BRAND.gold, color: BRAND.primary }}
+          >
+            <FileText size={14} />
+            {sendingDocRequest ? "Sending Request…" : "Send Document Request"}
+          </button>
+        </div>
+      )}
+
       <ConfirmDialog
         open={freezeConfirm}
         title="Freeze Funding Eligibility"
@@ -314,18 +448,22 @@ function CaseSheet({ open, caseItem, onClose }: {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function AdminCompliancePage() {
-  const [search, setSearch] = useState("");
+  const [search, setSearch]           = useState("");
   const [activeFilter, setActiveFilter] = useState<ReviewReason | "all">("all");
-  const [page] = useState(1);
-  const [caseSheet, setCaseSheet] = useState<ApiComplianceCase | null>(null);
+  const [page, setPage]               = useState(1);
+  const [caseSheet, setCaseSheet]     = useState<ApiComplianceCase | null>(null);
+
+  const PAGE_SIZE = 20;
 
   const { data, isLoading } = useGetComplianceCasesQuery({
-    reason: activeFilter !== "all" ? REASON_TO_API[activeFilter] : undefined,
+    reason:   activeFilter !== "all" ? REASON_TO_API[activeFilter] : undefined,
     page,
-    pageSize: 50,
+    pageSize: PAGE_SIZE,
   });
 
   const cases = data?.cases ?? [];
+  const totalCount = data?.totalCount ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   const filtered = search
     ? cases.filter((c) => {
@@ -351,10 +489,10 @@ export default function AdminCompliancePage() {
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label: "Total Cases",    value: data?.allCount ?? 0,              color: BRAND.accent },
-            { label: "High Risk",      value: data?.highRiskCount ?? 0,         color: BRAND.red },
-            { label: "Pending Review", value: data?.pendingReviewCount ?? 0,    color: BRAND.amber },
-            { label: "Funding Review", value: data?.fundingRelatedReviewCount ?? 0, color: BRAND.gold },
+            { label: "Total Cases",    value: data?.allCount ?? 0,                  color: BRAND.accent },
+            { label: "High Risk",      value: data?.highRiskCount ?? 0,             color: BRAND.red    },
+            { label: "Pending Review", value: data?.pendingReviewCount ?? 0,        color: BRAND.amber  },
+            { label: "Funding Review", value: data?.fundingRelatedReviewCount ?? 0, color: BRAND.gold   },
           ].map((s) => (
             <div key={s.label} className="rounded-2xl p-4 border" style={{ backgroundColor: "rgba(255,255,255,0.04)", borderColor: "rgba(255,255,255,0.08)" }}>
               {isLoading ? <Skeleton className="h-8 w-12 mb-1" /> : <div className="text-2xl font-bold" style={{ color: s.color }}>{s.value}</div>}
@@ -367,12 +505,14 @@ export default function AdminCompliancePage() {
         <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl border max-w-xs flex-shrink-0" style={{ backgroundColor: "rgba(255,255,255,0.05)", borderColor: "rgba(255,255,255,0.1)" }}>
             <Search size={14} style={{ color: BRAND.muted }} />
-            <input type="text" placeholder="Search business or reviewer…" value={search} onChange={(e) => setSearch(e.target.value)}
+            <input type="text" placeholder="Search business or reviewer…" value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
               className="bg-transparent outline-none text-sm text-white placeholder-[#6B7280] w-48" />
           </div>
           <div className="flex flex-wrap gap-1.5">
             {FILTER_TABS.map((tab) => (
-              <button key={tab.key} type="button" onClick={() => setActiveFilter(tab.key)}
+              <button key={tab.key} type="button"
+                onClick={() => { setActiveFilter(tab.key); setPage(1); }}
                 className="px-3 py-1.5 rounded-full text-xs font-medium transition-all"
                 style={{ backgroundColor: activeFilter === tab.key ? BRAND.gold : "rgba(255,255,255,0.06)", color: activeFilter === tab.key ? BRAND.primary : "rgba(255,255,255,0.6)" }}>
                 {tab.label}
@@ -401,60 +541,82 @@ export default function AdminCompliancePage() {
                         ))}
                       </tr>
                     ))
-                  : filtered.map((c) => {
-                      const urgency = URGENCY_FROM_API[c.urgency] ?? "medium";
-                      const decision = STATUS_FROM_API[c.status] ?? "open";
-                      const reason = REASON_FROM_API[c.reason] ?? "pending_review";
-                      const urg = urgencyStyle(urgency);
-                      const dec = decisionStyle(decision);
-                      return (
-                        <tr key={c.id} className="hover:bg-white/[0.02] transition-colors cursor-pointer"
-                          style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}
-                          onClick={() => setCaseSheet(c)}>
-                          <td className="px-4 py-3.5">
-                            <div className="font-medium text-white">{c.businessName}</div>
-                          </td>
-                          <td className="px-4 py-3.5">
-                            <span className="text-lg font-black" style={{ color: scoreColor(c.clientScore) }}>{c.clientScore}</span>
-                            <span className="text-xs ml-1" style={{ color: BRAND.muted }}>/100</span>
-                          </td>
-                          <td className="px-4 py-3.5">
-                            <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full w-fit" style={{ backgroundColor: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.6)" }}>
-                              {REASON_LABELS[reason]?.icon} {REASON_LABELS[reason]?.label ?? c.reason}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3.5">
-                            <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ color: urg.color, backgroundColor: urg.bg }}>{urg.label}</span>
-                          </td>
-                          <td className="px-4 py-3.5 text-sm" style={{ color: c.assignedReviewerName ? "rgba(255,255,255,0.7)" : BRAND.muted }}>
-                            {c.assignedReviewerName ?? "Unassigned"}
-                          </td>
-                          <td className="px-4 py-3.5 text-xs whitespace-nowrap" style={{ color: BRAND.muted }}>{c.openedAtFormatted}</td>
-                          <td className="px-4 py-3.5">
-                            <span className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ color: dec.color, backgroundColor: dec.bg }}>{dec.label}</span>
-                          </td>
-                          <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
-                            <button type="button" onClick={() => setCaseSheet(c)}
-                              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors hover:bg-white/10"
-                              style={{ border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.6)" }}>
-                              Open <ChevronRight size={12} />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })
+                  : filtered.length === 0
+                    ? (
+                      <tr>
+                        <td colSpan={8} className="px-5 py-12 text-center text-sm" style={{ color: BRAND.muted }}>
+                          No review cases match your filters.
+                        </td>
+                      </tr>
+                    )
+                    : filtered.map((c) => {
+                        const urgency  = URGENCY_FROM_API[c.urgency] ?? "medium";
+                        const decision = STATUS_FROM_API[c.status] ?? "open";
+                        const reason   = REASON_FROM_API[c.reason] ?? "pending_review";
+                        const urg      = urgencyStyle(urgency);
+                        const dec      = decisionStyle(decision);
+                        return (
+                          <tr key={c.id} className="hover:bg-white/[0.02] transition-colors cursor-pointer"
+                            style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}
+                            onClick={() => setCaseSheet(c)}>
+                            <td className="px-4 py-3.5">
+                              <div className="font-medium text-white">{c.businessName}</div>
+                            </td>
+                            <td className="px-4 py-3.5">
+                              <span className="text-lg font-black" style={{ color: scoreColor(c.clientScore) }}>{c.clientScore}</span>
+                              <span className="text-xs ml-1" style={{ color: BRAND.muted }}>/100</span>
+                            </td>
+                            <td className="px-4 py-3.5">
+                              <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full w-fit" style={{ backgroundColor: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.6)" }}>
+                                {REASON_LABELS[reason]?.icon} {REASON_LABELS[reason]?.label ?? c.reason}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3.5">
+                              <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ color: urg.color, backgroundColor: urg.bg }}>{urg.label}</span>
+                            </td>
+                            <td className="px-4 py-3.5 text-sm" style={{ color: c.assignedReviewerName ? "rgba(255,255,255,0.7)" : BRAND.muted }}>
+                              {c.assignedReviewerName ?? "Unassigned"}
+                            </td>
+                            <td className="px-4 py-3.5 text-xs whitespace-nowrap" style={{ color: BRAND.muted }}>{c.openedAtFormatted}</td>
+                            <td className="px-4 py-3.5">
+                              <span className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ color: dec.color, backgroundColor: dec.bg }}>{dec.label}</span>
+                            </td>
+                            <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
+                              <button type="button" onClick={() => setCaseSheet(c)}
+                                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors hover:bg-white/10"
+                                style={{ border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.6)" }}>
+                                Open <ChevronRight size={12} />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
                 }
-                {!isLoading && filtered.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className="px-5 py-12 text-center text-sm" style={{ color: BRAND.muted }}>
-                      No review cases match your filters.
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>
         </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between">
+            <span className="text-xs" style={{ color: BRAND.muted }}>
+              Page {page} of {totalPages} · {totalCount} total cases
+            </span>
+            <div className="flex gap-2">
+              <button type="button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}
+                className="px-4 py-2 rounded-xl text-sm font-medium disabled:opacity-40 transition-all"
+                style={{ backgroundColor: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.7)" }}>
+                Previous
+              </button>
+              <button type="button" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}
+                className="px-4 py-2 rounded-xl text-sm font-medium disabled:opacity-40 transition-all"
+                style={{ backgroundColor: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.7)" }}>
+                Next
+              </button>
+            </div>
+          </div>
+        )}
 
       </div>
 

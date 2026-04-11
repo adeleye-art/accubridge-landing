@@ -4,8 +4,14 @@ import React, { useState, useRef, useEffect } from "react";
 import { SystemSheet } from "@/components/shared/system-sheet";
 import {
   CheckCircle2, Loader2, Check, AlertCircle, RefreshCw,
-  Upload, ShieldCheck, FileText, Plus, Trash2, Link2,
+  Upload, ShieldCheck, FileText, Plus, Trash2, Link2, X,
 } from "lucide-react";
+import {
+  useSubmitKybMutation,
+  useFixLegalNameMutation,
+  useUploadComplianceDocumentMutation,
+} from "@/lib/api/complianceCentreApi";
+import { useToast } from "@/components/shared/toast";
 
 const BRAND = { primary: "#0A2463", gold: "#D4AF37", green: "#06D6A0", accent: "#3E92CC", muted: "#6B7280" };
 const inputBase =
@@ -83,7 +89,14 @@ interface DirectorEntry {
   name: string;
 }
 
-function KYBForm({ onSubmit }: { onSubmit: () => void }) {
+interface KYBFormData {
+  jurisdiction: string;
+  companiesHouseNumber: string;
+  directorsJson: string;
+  certificateOfIncorporationUrl: string;
+}
+
+function KYBForm({ onSubmit }: { onSubmit: (data: KYBFormData) => void }) {
   const [country, setCountry] = useState<"uk" | "ng">("uk");
   const [regNumber, setRegNumber] = useState("");
   const [directors, setDirectors] = useState<DirectorEntry[]>([{ id: "d1", name: "" }]);
@@ -259,7 +272,16 @@ function KYBForm({ onSubmit }: { onSubmit: () => void }) {
 
       <button
         type="button"
-        onClick={() => { if (validate()) onSubmit(); }}
+        onClick={() => {
+          if (validate()) {
+            onSubmit({
+              jurisdiction: country === "uk" ? "GB" : "NG",
+              companiesHouseNumber: regNumber.trim(),
+              directorsJson: JSON.stringify(directors.map((d) => d.name.trim())),
+              certificateOfIncorporationUrl: certFile,
+            });
+          }
+        }}
         className="w-full h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200"
         style={{ backgroundColor: BRAND.accent, color: "#fff" }}
         onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.88"; }}
@@ -273,18 +295,14 @@ function KYBForm({ onSubmit }: { onSubmit: () => void }) {
 
 // ─── Name Match Form ──────────────────────────────────────────────────────────
 
-function NameMatchForm({ onSubmit }: { onSubmit: () => void }) {
+function NameMatchForm({ onSubmit }: { onSubmit: (correctedName: string) => void }) {
   const [corrected, setCorrected] = useState("");
   const [error, setError] = useState("");
 
   const handleSubmit = () => {
     if (!corrected.trim()) { setError("Please enter the corrected business name"); return; }
-    if (corrected.trim().toLowerCase() === "apex solutions ltd") {
-      setError("This still does not match the official record — check the spelling below");
-      return;
-    }
     setError("");
-    onSubmit();
+    onSubmit(corrected.trim());
   };
 
   return (
@@ -345,7 +363,7 @@ function NameMatchForm({ onSubmit }: { onSubmit: () => void }) {
 
       <button
         type="button"
-        onClick={handleSubmit}
+        onClick={() => handleSubmit()}
         className="w-full h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200"
         style={{ backgroundColor: BRAND.gold, color: BRAND.primary }}
         onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.88"; }}
@@ -737,35 +755,69 @@ function VATSetupForm({ onSubmit }: { onSubmit: () => void }) {
   );
 }
 
-// ─── HMRC Connect Form ────────────────────────────────────────────────────────
+// ─── Tax Authority Toggle ─────────────────────────────────────────────────────
+
+function TaxAuthorityToggle({
+  value, onChange,
+}: { value: "HMRC" | "FIRS"; onChange: (v: "HMRC" | "FIRS") => void }) {
+  const options = [
+    { id: "HMRC" as const, flag: "🇬🇧", label: "HMRC", sub: "United Kingdom" },
+    { id: "FIRS" as const, flag: "🇳🇬", label: "FIRS", sub: "Nigeria" },
+  ];
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {options.map((o) => {
+        const active = value === o.id;
+        return (
+          <button
+            key={o.id}
+            type="button"
+            onClick={() => onChange(o.id)}
+            className="flex items-center gap-3 px-4 py-3 rounded-xl border transition-all duration-200"
+            style={{
+              backgroundColor: active ? `${BRAND.accent}15` : "rgba(255,255,255,0.04)",
+              borderColor: active ? `${BRAND.accent}50` : "rgba(255,255,255,0.08)",
+            }}
+          >
+            <span className="text-xl">{o.flag}</span>
+            <div className="text-left">
+              <div className="text-sm font-bold text-white">{o.label}</div>
+              <div className="text-[11px]" style={{ color: BRAND.muted }}>{o.sub}</div>
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── HMRC / FIRS Connect Form ─────────────────────────────────────────────────
 
 function HMRCConnectForm({ onSubmit }: { onSubmit: () => void }) {
+  const [authority, setAuthority] = useState<"HMRC" | "FIRS">("HMRC");
   const [authCode, setAuthCode] = useState("");
-  const [error, setError] = useState("");
 
-  const handleSubmit = () => {
-    if (!authCode.trim()) {
-      setError("Authorization code is required");
-      return;
-    }
-    setError("");
-    onSubmit();
-  };
+  const isHMRC = authority === "HMRC";
 
   return (
     <div className="flex flex-col gap-5">
+      <FieldLabel>Tax Authority</FieldLabel>
+      <TaxAuthorityToggle value={authority} onChange={setAuthority} />
+
       <div
         className="rounded-xl border p-4 text-xs leading-relaxed"
         style={{ backgroundColor: `${BRAND.green}06`, borderColor: `${BRAND.green}20`, color: "rgba(255,255,255,0.55)" }}
       >
-        🔗 Connect your HMRC account to automatically retrieve tax obligations and filing deadlines.
+        {isHMRC
+          ? "🔗 Connect your HMRC account to automatically retrieve UK VAT obligations and filing deadlines."
+          : "🔗 Connect your FIRS account to automatically retrieve Nigerian tax obligations and filing deadlines."}
       </div>
 
       <div
         className="rounded-xl border p-4 text-xs leading-relaxed"
         style={{ backgroundColor: "rgba(255,255,255,0.03)", borderColor: "rgba(255,255,255,0.08)" }}
       >
-        <strong>Next step:</strong> You'll be redirected to HMRC to authorize access. Once authorized, return here to complete the connection.
+        <strong>Next step:</strong> You&apos;ll be redirected to {isHMRC ? "HMRC" : "FIRS"} to authorise access. Once authorised, return here to complete the connection.
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -774,39 +826,12 @@ function HMRCConnectForm({ onSubmit }: { onSubmit: () => void }) {
           type="text"
           placeholder="Paste your auth code if you have one"
           value={authCode}
-          onChange={(e) => { setAuthCode(e.target.value); setError(""); }}
+          onChange={(e) => setAuthCode(e.target.value)}
           className={inputBase}
-          style={{ ...inputStyle, borderColor: error ? "#ef4444" : "rgba(255,255,255,0.1)" }}
+          style={inputStyle}
           onFocus={onFocusIn}
           onBlur={onFocusOut}
         />
-        {error && <span className="text-xs text-red-400">{error}</span>}
-      </div>
-
-      <button
-        type="button"
-        onClick={handleSubmit}
-        className="w-full h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200"
-        style={{ backgroundColor: BRAND.gold, color: BRAND.primary }}
-        onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.88"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
-      >
-        <Check size={15} />Connect to HMRC
-      </button>
-    </div>
-  );
-}
-
-// ─── HMRC Sync Form ───────────────────────────────────────────────────────────
-
-function HMRCSyncForm({ onSubmit }: { onSubmit: () => void }) {
-  return (
-    <div className="flex flex-col gap-5">
-      <div
-        className="rounded-xl border p-4 text-xs leading-relaxed"
-        style={{ backgroundColor: `${BRAND.green}06`, borderColor: `${BRAND.green}20`, color: "rgba(255,255,255,0.55)" }}
-      >
-        ✓ Syncing your latest VAT and payroll obligations from HMRC. This may take a few moments.
       </div>
 
       <button
@@ -817,7 +842,40 @@ function HMRCSyncForm({ onSubmit }: { onSubmit: () => void }) {
         onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.88"; }}
         onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
       >
-        <RefreshCw size={15} />Sync Now
+        <Check size={15} />Connect to {isHMRC ? "HMRC" : "FIRS"}
+      </button>
+    </div>
+  );
+}
+
+// ─── HMRC / FIRS Sync Form ────────────────────────────────────────────────────
+
+function HMRCSyncForm({ onSubmit }: { onSubmit: () => void }) {
+  const [authority, setAuthority] = useState<"HMRC" | "FIRS">("HMRC");
+
+  return (
+    <div className="flex flex-col gap-5">
+      <FieldLabel>Tax Authority</FieldLabel>
+      <TaxAuthorityToggle value={authority} onChange={setAuthority} />
+
+      <div
+        className="rounded-xl border p-4 text-xs leading-relaxed"
+        style={{ backgroundColor: `${BRAND.green}06`, borderColor: `${BRAND.green}20`, color: "rgba(255,255,255,0.55)" }}
+      >
+        {authority === "HMRC"
+          ? "✓ Syncing your latest VAT and payroll obligations from HMRC. This may take a few moments."
+          : "✓ Syncing your latest tax obligations from FIRS. This may take a few moments."}
+      </div>
+
+      <button
+        type="button"
+        onClick={onSubmit}
+        className="w-full h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200"
+        style={{ backgroundColor: BRAND.gold, color: BRAND.primary }}
+        onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.88"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
+      >
+        <RefreshCw size={15} />Sync from {authority === "HMRC" ? "HMRC" : "FIRS"}
       </button>
     </div>
   );
@@ -1093,65 +1151,109 @@ function ReceiptsForm({ onSubmit }: { onSubmit: () => void }) {
 
 // ─── Documents Upload Form ────────────────────────────────────────────────────
 
-function DocumentsUploadForm({ onSubmit }: { onSubmit: () => void }) {
-  const [documents, setDocuments] = useState<File[]>([]);
-  const [error, setError] = useState("");
+const DOC_TYPES = [
+  { value: "CertificateOfIncorporation", label: "Certificate of Incorporation" },
+  { value: "BankStatement",              label: "Bank Statement" },
+  { value: "VatCertificate",             label: "VAT Certificate" },
+  { value: "ProofOfAddress",             label: "Proof of Address" },
+  { value: "TaxReturn",                  label: "Tax Return" },
+  { value: "FinancialStatements",        label: "Financial Statements" },
+  { value: "Other",                      label: "Other" },
+];
 
-  const handleSubmit = () => {
-    if (documents.length === 0) {
-      setError("Please upload at least one document");
-      return;
+function DocumentsUploadForm({ onSubmit }: { onSubmit: () => void }) {
+  const [docType, setDocType] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+  const [uploadDocument] = useUploadComplianceDocumentMutation();
+
+  const handleSubmit = async () => {
+    if (!docType || !file) return;
+    setUploading(true);
+    try {
+      await uploadDocument({
+        documentType: docType,
+        file,
+        fileName: file.name,
+        fileSizeBytes: file.size,
+      }).unwrap();
+      onSubmit();
+    } catch {
+      toast({ title: "Upload failed. Please try again.", variant: "error" });
+    } finally {
+      setUploading(false);
     }
-    setError("");
-    onSubmit();
   };
+
+  const canSubmit = !!docType && !!file;
 
   return (
     <div className="flex flex-col gap-5">
-      <div
-        className="rounded-xl border p-4 text-xs leading-relaxed"
-        style={{ backgroundColor: `${BRAND.accent}06`, borderColor: `${BRAND.accent}20`, color: "rgba(255,255,255,0.55)" }}
-      >
-        📄 Upload Certificate of Incorporation, proof of address, and director ID documents.
-      </div>
-
-      <div
-        className="rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-all duration-200"
-        style={{ borderColor: error ? "#ef4444" : `${BRAND.accent}30`, backgroundColor: error ? "rgba(239,68,68,0.06)" : `${BRAND.accent}06` }}
-        onClick={() => document.getElementById("documents-input")?.click()}
-      >
-        <FileText size={24} style={{ color: BRAND.accent, margin: "0 auto 8px" }} />
-        <div className="text-sm font-medium text-white">Click to upload documents</div>
-        <div className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.5)" }}>PDF or image files (max 10MB each)</div>
-      </div>
-
-      <input
-        id="documents-input"
-        type="file"
-        hidden
-        multiple
-        accept=".pdf,.jpg,.jpeg,.png"
-        onChange={(e) => { setDocuments(Array.from(e.target.files || [])); setError(""); }}
-      />
-
-      {documents.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {documents.map((f, i) => (
-            <div key={i} className="text-sm text-white">✓ {f.name}</div>
+      {/* Document Type */}
+      <div className="flex flex-col gap-1.5">
+        <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: BRAND.muted }}>
+          Document Type <span style={{ color: BRAND.gold }}>*</span>
+        </label>
+        <select
+          value={docType}
+          onChange={(e) => setDocType(e.target.value)}
+          className="w-full h-11 px-4 rounded-xl text-sm text-white border outline-none transition-all duration-200 appearance-none cursor-pointer"
+          style={{ backgroundColor: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.1)", colorScheme: "dark" }}
+          onFocus={(e) => { e.target.style.borderColor = "rgba(62,146,204,0.6)"; }}
+          onBlur={(e) => { e.target.style.borderColor = "rgba(255,255,255,0.1)"; }}
+        >
+          <option value="" style={{ backgroundColor: "#0f1e3a" }}>Select document type…</option>
+          {DOC_TYPES.map((d) => (
+            <option key={d.value} value={d.value} style={{ backgroundColor: "#0f1e3a" }}>{d.label}</option>
           ))}
+        </select>
+      </div>
+
+      {/* File */}
+      {file ? (
+        <div
+          className="flex items-center gap-3 px-4 py-3 rounded-xl border"
+          style={{ backgroundColor: "rgba(255,255,255,0.04)", borderColor: "rgba(255,255,255,0.08)" }}
+        >
+          <FileText size={16} style={{ color: BRAND.accent, flexShrink: 0 }} />
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium text-white truncate">{file.name}</div>
+            <div className="text-[11px]" style={{ color: BRAND.muted }}>{(file.size / 1024).toFixed(0)} KB</div>
+          </div>
+          <button type="button" onClick={() => { setFile(null); if (fileRef.current) fileRef.current.value = ""; }} className="hover:opacity-70 transition-opacity">
+            <X size={14} style={{ color: BRAND.muted }} />
+          </button>
+        </div>
+      ) : (
+        <div
+          className="rounded-xl border-2 border-dashed p-6 text-center cursor-pointer transition-all duration-200"
+          style={{ borderColor: dragOver ? BRAND.accent : `${BRAND.accent}30`, backgroundColor: dragOver ? `${BRAND.accent}08` : `${BRAND.accent}04` }}
+          onClick={() => fileRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files?.[0]; if (f) setFile(f); }}
+        >
+          <Upload size={22} style={{ color: BRAND.accent, margin: "0 auto 8px" }} />
+          <div className="text-sm font-medium text-white">Drop file here or click to browse</div>
+          <div className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.5)" }}>PDF, JPG, PNG · Max 10 MB</div>
         </div>
       )}
-      {error && <span className="text-xs text-red-400">{error}</span>}
+      <input ref={fileRef} type="file" hidden accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile(f); }} />
 
       <button
         type="button"
         onClick={handleSubmit}
-        className="w-full h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200"
+        disabled={!canSubmit || uploading}
+        className="w-full h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200 disabled:opacity-40"
         style={{ backgroundColor: BRAND.gold, color: BRAND.primary }}
-        onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.88"; }}
+        onMouseEnter={(e) => { if (canSubmit) e.currentTarget.style.opacity = "0.88"; }}
         onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
       >
-        <Check size={15} />Upload Documents
+        {uploading ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
+        {uploading ? "Uploading…" : "Upload Document"}
       </button>
     </div>
   );
@@ -1901,8 +2003,11 @@ interface FixActionSheetProps {
 
 export function FixActionSheet({ isOpen, onClose, fixType }: FixActionSheetProps) {
   const [step, setStep] = useState<"form" | "processing" | "done">("form");
-  // openKey remounts sub-form each time the sheet opens — resets field state
   const [openKey, setOpenKey] = useState(0);
+
+  const [submitKyb] = useSubmitKybMutation();
+  const [fixLegalName] = useFixLegalNameMutation();
+  const { toast } = useToast();
 
   useEffect(() => {
     if (isOpen) {
@@ -1916,10 +2021,33 @@ export function FixActionSheet({ isOpen, onClose, fixType }: FixActionSheetProps
     onClose();
   };
 
+  // Generic handler for forms that have no API yet
   const handleSubmit = async () => {
     setStep("processing");
     await new Promise((res) => setTimeout(res, 1800));
     setStep("done");
+  };
+
+  const handleKYBSubmit = async (data: KYBFormData) => {
+    setStep("processing");
+    try {
+      await submitKyb(data).unwrap();
+      setStep("done");
+    } catch {
+      setStep("form");
+      toast({ title: "KYB submission failed. Please try again.", variant: "error" });
+    }
+  };
+
+  const handleNameMatchSubmit = async (correctedName: string) => {
+    setStep("processing");
+    try {
+      await fixLegalName({ correctedName }).unwrap();
+      setStep("done");
+    } catch {
+      setStep("form");
+      toast({ title: "Failed to update legal name. Please try again.", variant: "error" });
+    }
   };
 
   const meta = SHEET_META[fixType];
@@ -1949,8 +2077,8 @@ export function FixActionSheet({ isOpen, onClose, fixType }: FixActionSheetProps
       )}
       {step === "form" && (
         <div key={openKey}>
-          {fixType === "kyb" && <KYBForm onSubmit={handleSubmit} />}
-          {fixType === "name_match" && <NameMatchForm onSubmit={handleSubmit} />}
+          {fixType === "kyb" && <KYBForm onSubmit={handleKYBSubmit} />}
+          {fixType === "name_match" && <NameMatchForm onSubmit={handleNameMatchSubmit} />}
           {fixType === "registration_number" && <RegistrationNumberForm onSubmit={handleSubmit} />}
           {fixType === "entity_status" && <EntityStatusForm onSubmit={handleSubmit} />}
           {fixType === "business_profile" && <BusinessProfileForm onSubmit={handleSubmit} />}

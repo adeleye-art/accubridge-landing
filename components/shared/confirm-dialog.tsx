@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle, X, Loader2 } from "lucide-react";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -10,6 +10,7 @@ interface ConfirmDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   variant?: "danger" | "warning" | "default";
+  loading?: boolean;
   onConfirm: () => void | Promise<void>;
   onCancel: () => void;
 }
@@ -21,6 +22,7 @@ export function ConfirmDialog({
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
   variant = "danger",
+  loading = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -91,9 +93,11 @@ export function ConfirmDialog({
           </button>
           <button
             onClick={onConfirm}
-            className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80"
+            disabled={loading}
+            className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-80 disabled:opacity-50 flex items-center gap-2"
             style={{ backgroundColor: confirmBg, border: `1px solid ${confirmColor}55`, color: confirmColor }}
           >
+            {loading && <Loader2 size={14} className="animate-spin" />}
             {confirmLabel}
           </button>
         </div>
