@@ -61,6 +61,8 @@ export interface KYCData {
   full_name: string;
   dob: string;
   nationality: string;
+  phone_number: string;
+  email: string;
   address: string;
   city: string;
   postcode: string;
@@ -68,6 +70,7 @@ export interface KYCData {
   id_type: "passport" | "drivers_licence" | "national_id";
   id_number: string;
   id_expiry: string;
+  id_document_url: string;
 }
 
 export interface CompanyVerification {

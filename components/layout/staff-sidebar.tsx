@@ -20,6 +20,7 @@ import {
   User,
   Bell,
   Search,
+  Landmark,
 } from "lucide-react";
 import { useSignOutMutation } from "@/lib/api/authApi";
 
@@ -70,6 +71,7 @@ const STAFF_NAV: NavSection[] = [
       { id: "compliance",   label: "Compliance",   href: "/staff/compliance",   icon: <ShieldCheck size={18} /> },
       { id: "notes",        label: "Notes",        href: "/staff/notes",        icon: <StickyNote size={18} /> },
       { id: "documents",    label: "Documents",    href: "/staff/documents",    icon: <FileText size={18} /> },
+      { id: "funding",      label: "Funding Review", href: "/staff/funding",    icon: <Landmark size={18} /> },
     ],
   },
   {
@@ -88,6 +90,7 @@ const STAFF_PATH_TO_ITEM: [string, string][] = [
   ["/staff/compliance",   "compliance"],
   ["/staff/notes",        "notes"],
   ["/staff/documents",    "documents"],
+  ["/staff/funding",      "funding"],
   ["/staff/settings",     "settings"],
   ["/staff/dashboard",    "dashboard"],
 ];

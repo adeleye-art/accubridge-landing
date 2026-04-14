@@ -28,11 +28,11 @@ const BRAND = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Map the API status int/label to our 3 display states */
+/** Map the API status string to our 3 display states */
 function resolveStatus(item: ReconciliationListItem): "complete" | "in-progress" | "needs-review" {
-  const label = item.statusLabel?.toLowerCase() ?? "";
+  const label = item.status?.toLowerCase() ?? "";
   if (label.includes("complete")) return "complete";
-  if (label.includes("review") || label.includes("needs")) return "needs-review";
+  if (label.includes("pending")) return "needs-review";
   return "in-progress";
 }
 
@@ -100,18 +100,18 @@ function MatchBar({ pct }: { pct: number }) {
 // ─── Summary cards ────────────────────────────────────────────────────────────
 
 function SummaryCards({
-  complete,
+  total,
   inProgress,
-  needsReview,
+  pending,
 }: {
-  complete: number;
+  total: number;
   inProgress: number;
-  needsReview: number;
+  pending: number;
 }) {
   const cards = [
-    { label: "Complete",     value: complete,    color: BRAND.green, bg: `${BRAND.green}15`,     border: `${BRAND.green}20`,     icon: <CheckCircle2 size={18} /> },
-    { label: "In Progress",  value: inProgress,  color: BRAND.gold,  bg: `${BRAND.gold}15`,      border: `${BRAND.gold}20`,      icon: <Clock size={18} /> },
-    { label: "Needs Review", value: needsReview, color: BRAND.red,   bg: "rgba(239,68,68,0.12)", border: "rgba(239,68,68,0.18)", icon: <AlertOctagon size={18} /> },
+    { label: "Total",        value: total,      color: BRAND.accent, bg: `${BRAND.accent}15`,    border: `${BRAND.accent}20`,    icon: <BarChart2 size={18} /> },
+    { label: "In Progress",  value: inProgress, color: BRAND.gold,   bg: `${BRAND.gold}15`,      border: `${BRAND.gold}20`,      icon: <Clock size={18} /> },
+    { label: "Pending",      value: pending,    color: BRAND.red,    bg: "rgba(239,68,68,0.12)", border: "rgba(239,68,68,0.18)", icon: <AlertOctagon size={18} /> },
   ];
 
   return (
@@ -144,7 +144,7 @@ export default function ReconciliationHistoryPage() {
   const router = useRouter();
   const { data, isLoading, isError } = useGetReconciliationsQuery();
 
-  const runs = data?.reconciliations ?? [];
+  const runs = data?.sessions ?? [];
   const summary = data?.summary;
 
   function openRun(id: number) {
@@ -185,9 +185,9 @@ export default function ReconciliationHistoryPage() {
 
         {/* Summary stats */}
         <SummaryCards
-          complete={summary?.complete ?? 0}
-          inProgress={summary?.inProgress ?? 0}
-          needsReview={summary?.needsReview ?? 0}
+          total={summary?.totalCount ?? 0}
+          inProgress={summary?.inProgressCount ?? 0}
+          pending={summary?.pendingCount ?? 0}
         />
 
         {/* History list */}
@@ -315,10 +315,10 @@ export default function ReconciliationHistoryPage() {
                   <div className="flex items-center gap-2 pl-9">
                     <span className="text-[11px]" style={{ color: BRAND.muted }}>{run.fileName}</span>
                     <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.2)" }}>·</span>
-                    <span className="text-[11px]" style={{ color: BRAND.muted }}>{formatDate(run.createdAt)}</span>
+                    <span className="text-[11px]" style={{ color: BRAND.muted }}>{run.uploadedAtFormatted ?? formatDate(run.uploadedAt)}</span>
                   </div>
                   <div className="pl-9">
-                    <MatchBar pct={run.progressPercentage} />
+                    <MatchBar pct={run.progressPercentage ?? 0} />
                   </div>
                 </div>
 
@@ -331,7 +331,7 @@ export default function ReconciliationHistoryPage() {
                 <div className="flex flex-col gap-0.5">
                   <span className="text-sm font-semibold text-white">{run.totalLines} lines</span>
                   <span className="text-[11px]" style={{ color: BRAND.muted }}>
-                    {run.matchedCount}M · {run.totalLines - run.matchedCount}U
+                    {run.linesSummary ?? `${run.matchedCount ?? 0}M · ${run.unmatchedCount ?? 0}U`}
                   </span>
                 </div>
 

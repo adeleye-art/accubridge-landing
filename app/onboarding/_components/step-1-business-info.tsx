@@ -3,6 +3,11 @@
 import React, { useState } from "react";
 import type { Step1Data } from "@/types/onboarding";
 import { FormField, FormInput, FormSelect, StepNav } from "./form-primitives";
+import {
+  useUpdateClientBusinessDetailsMutation,
+  useUpdateClientAddressMutation,
+  useUpdateClientContactPersonMutation,
+} from "@/lib/api/clientApi";
 
 const BUSINESS_TYPES = [
   { value: "sole_trader",     label: "Sole Trader"           },
@@ -19,14 +24,19 @@ const COUNTRIES = [
   { value: "both",    label: "🌍 Both UK & Nigeria" },
 ];
 
+const BUSINESS_TYPE_TO_INT: Record<string, number> = {
+  sole_trader: 0, limited_company: 1, llp: 2, partnership: 3, charity: 4, other: 5,
+};
+
 const OPT = { backgroundColor: "#0f1e3a" };
 
 interface Props {
   data: Partial<Step1Data>;
+  userId: number | null;
   onComplete: (data: Step1Data) => void;
 }
 
-export function Step1BusinessInfo({ data, onComplete }: Props) {
+export function Step1BusinessInfo({ data, userId, onComplete }: Props) {
   const [form, setForm] = useState<Step1Data>({
     business_name:       data.business_name       ?? "",
     business_type:       data.business_type       ?? "",
@@ -39,7 +49,13 @@ export function Step1BusinessInfo({ data, onComplete }: Props) {
     city:                data.city                ?? "",
     postcode:            data.postcode            ?? "",
   });
-  const [errors, setErrors] = useState<Partial<Record<keyof Step1Data, string>>>({});
+  const [errors,    setErrors]    = useState<Partial<Record<keyof Step1Data, string>>>({});
+  const [apiError,  setApiError]  = useState("");
+  const [isSaving,  setIsSaving]  = useState(false);
+
+  const [updateBusinessDetails] = useUpdateClientBusinessDetailsMutation();
+  const [updateAddress]         = useUpdateClientAddressMutation();
+  const [updateContactPerson]   = useUpdateClientContactPersonMutation();
 
   const set = (k: keyof Step1Data) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -55,6 +71,50 @@ export function Step1BusinessInfo({ data, onComplete }: Props) {
     if (!form.owner_phone.trim())     e.owner_phone       = "Phone number is required";
     setErrors(e);
     return Object.keys(e).length === 0;
+  }
+
+  async function handleContinue() {
+    if (!validate()) return;
+    if (!userId) { onComplete(form); return; }
+
+    setIsSaving(true);
+    setApiError("");
+    try {
+      await Promise.all([
+        updateBusinessDetails({
+          id: userId,
+          body: {
+            tradingName:        form.business_name,
+            registrationNumber: form.registration_number || undefined,
+            structure:          BUSINESS_TYPE_TO_INT[form.business_type] ?? 5,
+          },
+        }),
+        updateAddress({
+          id: userId,
+          body: {
+            addressLine1:     form.business_address || undefined,
+            city:             form.city             || undefined,
+            postalCode:       form.postcode         || undefined,
+            country:          form.operating_country,
+            operatingCountry: form.operating_country,
+          },
+        }),
+        updateContactPerson({
+          id: userId,
+          body: {
+            contactPersonName:  form.owner_full_name,
+            contactPersonEmail: form.owner_email,
+            contactPersonPhone: form.owner_phone,
+            contactPersonRole:  "Owner",
+          },
+        }),
+      ]);
+      onComplete(form);
+    } catch {
+      setApiError("Failed to save your business info. Please check your connection and try again.");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   const sectionStyle = {
@@ -142,7 +202,8 @@ export function Step1BusinessInfo({ data, onComplete }: Props) {
         </div>
       </div>
 
-      <StepNav isFirstStep onContinue={() => { if (validate()) onComplete(form); }} />
+      {apiError && <p className="text-sm text-red-400 text-center">{apiError}</p>}
+      <StepNav isFirstStep isLoading={isSaving} onContinue={handleContinue} />
     </div>
   );
 }

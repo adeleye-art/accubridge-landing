@@ -4,6 +4,7 @@ import React, { useRef, useState } from "react";
 import { Upload, CheckCircle2, ShieldCheck, Check, X } from "lucide-react";
 import type { Step5Data } from "@/types/onboarding";
 import { FormField, FormSelect, StepNav } from "./form-primitives";
+import { useUpdateClientMetadataMutation } from "@/lib/api/clientApi";
 
 const BRAND = { primary: "#0A2463", gold: "#D4AF37", green: "#06D6A0", accent: "#3E92CC", muted: "#6B7280" };
 
@@ -23,11 +24,12 @@ const OPT = { backgroundColor: "#0f1e3a" };
 
 interface Props {
   data: Partial<Step5Data>;
+  userId: number | null;
   onComplete: (data: Step5Data) => void;
   onBack: () => void;
 }
 
-export function Step5Verification({ data, onComplete, onBack }: Props) {
+export function Step5Verification({ data, userId, onComplete, onBack }: Props) {
   const [form, setForm] = useState<Step5Data>({
     id_uploaded:            data.id_uploaded            ?? false,
     id_file_name:           data.id_file_name           ?? "",
@@ -37,9 +39,13 @@ export function Step5Verification({ data, onComplete, onBack }: Props) {
     business_doc_type:      data.business_doc_type      ?? "",
     terms_accepted:         data.terms_accepted         ?? false,
   });
-  const [errors, setErrors] = useState<{ id?: string; terms?: string }>({});
+  const [errors,   setErrors]   = useState<{ id?: string; terms?: string }>({});
+  const [apiError, setApiError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
   const idRef  = useRef<HTMLInputElement>(null);
   const docRef = useRef<HTMLInputElement>(null);
+
+  const [updateClientMetadata] = useUpdateClientMetadataMutation();
 
   function validate() {
     const e: typeof errors = {};
@@ -47,6 +53,25 @@ export function Step5Verification({ data, onComplete, onBack }: Props) {
     if (!form.terms_accepted) e.terms = "You must accept the terms to continue";
     setErrors(e);
     return Object.keys(e).length === 0;
+  }
+
+  async function handleComplete() {
+    if (!validate()) return;
+    if (!userId) { onComplete(form); return; }
+
+    setIsSaving(true);
+    setApiError("");
+    try {
+      await updateClientMetadata({
+        id:   userId,
+        body: { notes: "Terms accepted during onboarding", source: 0 },
+      });
+      onComplete(form);
+    } catch {
+      setApiError("Failed to submit verification. Please check your connection and try again.");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   const sectionStyle = {
@@ -205,9 +230,11 @@ export function Step5Verification({ data, onComplete, onBack }: Props) {
         {errors.terms && <span className="text-xs text-red-400 mt-1 block">{errors.terms}</span>}
       </div>
 
+      {apiError && <p className="text-sm text-red-400 text-center">{apiError}</p>}
       <StepNav
         onBack={onBack}
-        onContinue={() => { if (validate()) onComplete(form); }}
+        isLoading={isSaving}
+        onContinue={handleComplete}
         continueLabel="Complete Onboarding →"
       />
     </div>

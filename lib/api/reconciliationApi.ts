@@ -3,10 +3,9 @@ import { baseApi } from "./baseApi";
 // ─── API Response Types ───────────────────────────────────────────────────────
 
 export interface ReconciliationSummary {
-  complete: number;
-  inProgress: number;
-  needsReview: number;
-  pending: number;
+  inProgressCount: number;
+  pendingCount: number;
+  totalCount: number;
 }
 
 export interface ReconciliationListItem {
@@ -14,19 +13,26 @@ export interface ReconciliationListItem {
   period: string;
   bankName: string;
   fileName: string;
-  status: number;
-  statusLabel: string;
-  matchedCount: number;
+  status: string;
+  statusValue: number;
+  matchedCount?: number;
+  unmatchedCount?: number;
   totalLines: number;
-  progressPercentage: number;
-  createdAt: string;
+  linesSummary?: string;
+  progressPercentage?: number;
+  uploadedAt: string;
+  uploadedAtFormatted?: string;
+  totalAmount?: number;
+  formattedTotalAmount?: string;
+  hasUnmatchedLines?: boolean;
 }
 
 export interface ReconciliationsListResponse {
-  reconciliations: ReconciliationListItem[];
+  sessions: ReconciliationListItem[];
   totalCount: number;
   page: number;
   pageSize: number;
+  totalPages: number;
   summary: ReconciliationSummary;
 }
 
@@ -35,10 +41,10 @@ export interface ApiReconciliationLine {
   dateFormatted: string;
   description: string;
   amount: number;
-  isIncome: boolean;
+  isIncome?: boolean;
   matchStatus: "Unmatched" | "Matched" | "Flagged";
-  matchedTransactionId: number | null;
-  matchConfidence: number | null;
+  matchedTransactionId?: number | null;
+  matchConfidence?: number | null;
 }
 
 export interface ReconciliationDetail {
@@ -46,19 +52,24 @@ export interface ReconciliationDetail {
   period: string;
   bankName: string;
   fileName: string;
-  status: number;
-  statusLabel: string;
-  matchedCount: number;
-  unmatchedCount: number;
-  flaggedCount: number;
+  status: string | number;
+  statusValue?: number;
+  statusLabel?: string;
+  matchedCount?: number;
+  unmatchedCount?: number;
+  flaggedCount?: number;
   totalLines: number;
-  progressPercentage: number;
+  progressPercentage?: number;
   progressLabel: string;
-  autoMatchCount: number;
+  autoMatchCount?: number;
+  canFinalise?: boolean;  // From API
   lines: ApiReconciliationLine[];
-  totalCount: number;
+  totalCount?: number;
+  filteredLineCount?: number;
   page: number;
   pageSize: number;
+  totalPages?: number;
+  uploadedAtFormatted?: string;
 }
 
 export interface MatchCandidate {
@@ -84,8 +95,8 @@ export const reconciliationApi = baseApi.injectEndpoints({
         url: "/reconciliation",
         params: { page: params?.page ?? 1, pageSize: params?.pageSize ?? 20 },
       }),
-      transformResponse: (res: { success: boolean; data: ReconciliationsListResponse }) =>
-        res.data,
+      transformResponse: (res: { success?: boolean; data?: ReconciliationsListResponse } | ReconciliationsListResponse) =>
+        ("data" in res && res.data != null) ? res.data : (res as ReconciliationsListResponse),
       providesTags: ["Reconciliation"],
     }),
 
@@ -107,7 +118,10 @@ export const reconciliationApi = baseApi.injectEndpoints({
           PageSize: pageSize,
         },
       }),
-      transformResponse: (res: { success: boolean; data: ReconciliationDetail }) => res.data,
+      transformResponse: (res: { success: boolean; data: ReconciliationDetail } | ReconciliationDetail) =>
+        "data" in res && res.data != null
+          ? (res as { success: boolean; data: ReconciliationDetail }).data
+          : (res as ReconciliationDetail),
       providesTags: (_result, _error, { id }) => [{ type: "Reconciliation" as const, id }],
     }),
 
@@ -134,6 +148,10 @@ export const reconciliationApi = baseApi.injectEndpoints({
       query: (id) => ({
         url: `/reconciliation/${id}/finalise`,
         method: "POST",
+      }),
+      transformResponse: (res: { message: string }) => ({
+        success: true,
+        message: res.message,
       }),
       invalidatesTags: ["Reconciliation"],
     }),

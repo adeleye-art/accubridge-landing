@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { TrendingUp, DollarSign, CreditCard, Download, ChevronDown } from "lucide-react";
 import { useToast } from "@/components/shared/toast";
+import { useGetClientsQuery } from "@/lib/api/clientApi";
 import {
   useLazyGetPnLReportQuery,
   useLazyGetBalanceSheetReportQuery,
@@ -14,6 +15,17 @@ import {
 } from "@/lib/api/reportApi";
 
 const BRAND = { gold: "#D4AF37", accent: "#3E92CC", muted: "#6B7280", primary: "#0A2463" };
+
+const inputStyle: React.CSSProperties = {
+  backgroundColor: "rgba(255,255,255,0.08)",
+  border: "1px solid rgba(255,255,255,0.12)",
+  borderRadius: "12px",
+  color: "#fff",
+  fontSize: "13px",
+  padding: "8px 12px",
+  outline: "none",
+  colorScheme: "dark",
+};
 
 const PERIODS = [
   { label: "Today",          value: 1 },
@@ -45,11 +57,11 @@ function ReportSection({ title, rows }: { title: string; rows: { description: st
   );
 }
 
-function PnLView({ data }: { data: ApiPnLReport }) {
+function PnLView({ data, clientName }: { data: ApiPnLReport; clientName?: string }) {
   return (
     <div className="rounded-2xl border p-5" style={{ backgroundColor: "rgba(255,255,255,0.04)", borderColor: "rgba(255,255,255,0.08)" }}>
       <div className="flex items-center justify-between mb-4">
-        <h3 className="font-bold text-white">Profit & Loss — {data.period}</h3>
+        <h3 className="font-bold text-white">Profit & Loss {clientName ? `— ${clientName}` : ""} — {data.period}</h3>
         <span className="text-xs px-2.5 py-1 rounded-full font-medium" style={{ color: data.isProfit ? "#06D6A0" : "#ef4444", backgroundColor: data.isProfit ? "rgba(6,214,160,0.1)" : "rgba(239,68,68,0.1)" }}>
           {data.netMarginLabel}
         </span>
@@ -64,11 +76,11 @@ function PnLView({ data }: { data: ApiPnLReport }) {
   );
 }
 
-function BalanceView({ data }: { data: ApiBalanceSheetReport }) {
+function BalanceView({ data, clientName }: { data: ApiBalanceSheetReport; clientName?: string }) {
   return (
     <div className="rounded-2xl border p-5" style={{ backgroundColor: "rgba(255,255,255,0.04)", borderColor: "rgba(255,255,255,0.08)" }}>
       <div className="flex items-center justify-between mb-4">
-        <h3 className="font-bold text-white">Balance Sheet — {data.period}</h3>
+        <h3 className="font-bold text-white">Balance Sheet {clientName ? `— ${clientName}` : ""} — {data.period}</h3>
         <span className="text-xs px-2.5 py-1 rounded-full font-medium" style={{ color: data.isBalanced ? "#06D6A0" : "#ef4444", backgroundColor: data.isBalanced ? "rgba(6,214,160,0.1)" : "rgba(239,68,68,0.1)" }}>
           {data.balanceStatusLabel}
         </span>
@@ -82,11 +94,11 @@ function BalanceView({ data }: { data: ApiBalanceSheetReport }) {
   );
 }
 
-function CashFlowView({ data }: { data: ApiCashFlowReport }) {
+function CashFlowView({ data, clientName }: { data: ApiCashFlowReport; clientName?: string }) {
   return (
     <div className="rounded-2xl border p-5" style={{ backgroundColor: "rgba(255,255,255,0.04)", borderColor: "rgba(255,255,255,0.08)" }}>
       <div className="flex items-center justify-between mb-4">
-        <h3 className="font-bold text-white">Cash Flow — {data.period}</h3>
+        <h3 className="font-bold text-white">Cash Flow {clientName ? `— ${clientName}` : ""} — {data.period}</h3>
         <span className="text-xs px-2.5 py-1 rounded-full font-medium" style={{ color: data.isNetPositive ? "#06D6A0" : "#ef4444", backgroundColor: data.isNetPositive ? "rgba(6,214,160,0.1)" : "rgba(239,68,68,0.1)" }}>
           {data.isNetPositive ? "Net Positive" : "Net Negative"}
         </span>
@@ -110,9 +122,19 @@ function CashFlowView({ data }: { data: ApiCashFlowReport }) {
 }
 
 export default function StaffReportsPage() {
+  const { data: clientsData, isLoading: clientsLoading } = useGetClientsQuery({ pageSize: 100 });
+  const clients = clientsData?.clients ?? [];
+  
+  const [selectedClientId, setSelectedClientId] = useState<string>("");
   const [selectedType, setSelectedType] = useState("pnl");
   const [period, setPeriod]             = useState(3); // This Month
   const [generated, setGenerated]       = useState(false);
+
+  useEffect(() => {
+    if (clients.length > 0 && !selectedClientId) {
+      setSelectedClientId(String(clients[0].id));
+    }
+  }, [clients, selectedClientId]);
 
   const [triggerPnL,      { data: pnlData,      isFetching: pnlFetching }]     = useLazyGetPnLReportQuery();
   const [triggerBalance,  { data: balanceData,  isFetching: balanceFetching }]  = useLazyGetBalanceSheetReportQuery();
@@ -121,6 +143,7 @@ export default function StaffReportsPage() {
   const { toast } = useToast();
 
   const isGenerating = pnlFetching || balanceFetching || cashFlowFetching;
+  const selectedClient = clients.find((c) => String(c.id) === selectedClientId);
 
   const handleGenerate = async () => {
     const params: ReportPeriodParams = { Period: period };
@@ -149,6 +172,23 @@ export default function StaffReportsPage() {
 
         {/* Controls */}
         <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+          {/* Client selector */}
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-semibold uppercase tracking-wide flex-shrink-0" style={{ color: BRAND.muted }}>Client</label>
+            {clientsLoading
+              ? <div className="h-10 w-52 animate-pulse rounded-lg" style={{ backgroundColor: "rgba(255,255,255,0.08)" }} />
+              : (
+                <select value={selectedClientId} onChange={(e) => { setSelectedClientId(e.target.value); setGenerated(false); }}
+                  style={inputStyle}>
+                  {clients.map((c) => (
+                    <option key={c.id} value={String(c.id)} style={{ backgroundColor: BRAND.primary }}>{c.businessName}</option>
+                  ))}
+                </select>
+              )
+            }
+          </div>
+
+          {/* Period selector */}
           <div className="relative">
             <select value={period} onChange={(e) => { setPeriod(Number(e.target.value)); setGenerated(false); }}
               className="border rounded-xl pl-3 pr-8 py-2.5 text-sm text-white outline-none appearance-none"
@@ -192,9 +232,9 @@ export default function StaffReportsPage() {
         {/* Report results */}
         {generated && (
           <div className="flex flex-col gap-5">
-            {(selectedType === "pnl" || selectedType === "all") && pnlData && <PnLView data={pnlData} />}
-            {(selectedType === "balance" || selectedType === "all") && balanceData && <BalanceView data={balanceData} />}
-            {(selectedType === "cashflow" || selectedType === "all") && cashFlowData && <CashFlowView data={cashFlowData} />}
+            {(selectedType === "pnl" || selectedType === "all") && pnlData && <PnLView data={pnlData} clientName={selectedClient?.businessName} />}
+            {(selectedType === "balance" || selectedType === "all") && balanceData && <BalanceView data={balanceData} clientName={selectedClient?.businessName} />}
+            {(selectedType === "cashflow" || selectedType === "all") && cashFlowData && <CashFlowView data={cashFlowData} clientName={selectedClient?.businessName} />}
           </div>
         )}
 

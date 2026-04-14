@@ -4,8 +4,11 @@ import React, { useState } from "react";
 import { Check, Star, Sparkles, Pencil } from "lucide-react";
 import type { Step3Data, PlanType } from "@/types/onboarding";
 import { StepNav } from "./form-primitives";
+import { useInitializePaymentMutation } from "@/lib/api/paymentApi";
 
 const BRAND = { primary: "#0A2463", gold: "#D4AF37", accent: "#3E92CC", muted: "#6B7280" };
+
+const PLAN_PRICES: Record<string, number> = { basic: 29, standard: 69, premium: 129 };
 
 const PLANS = [
   {
@@ -63,13 +66,36 @@ const PLANS = [
 
 interface Props {
   data: Partial<Step3Data>;
+  email?: string;
   onComplete: (data: Step3Data) => void;
   onBack: () => void;
 }
 
-export function Step3PlanSelection({ data, onComplete, onBack }: Props) {
-  const [selected, setSelected] = useState<PlanType | "">(data.selected_plan ?? "standard");
-  const [error, setError] = useState("");
+export function Step3PlanSelection({ data, email, onComplete, onBack }: Props) {
+  const [selected,    setSelected]    = useState<PlanType | "">(data.selected_plan ?? "");
+  const [error,       setError]       = useState("");
+  const [isRedirecting, setIsRedirecting] = useState(false);
+
+  const [initializePayment] = useInitializePaymentMutation();
+
+  async function handleContinue() {
+    if (!selected) { setError("Please select a plan to continue"); return; }
+    setIsRedirecting(true);
+    try {
+      const result = await initializePayment({
+        amount:      PLAN_PRICES[selected] ?? 29,
+        email:       email ?? "",
+        currency:    "GBP",
+        paymentType: "subscription",
+        callbackUrl: `${window.location.origin}/payment/callback?type=subscription`,
+      }).unwrap();
+      window.location.href = result.authorizationUrl;
+    } catch {
+      // If payment init fails fall back to local completion so onboarding isn't blocked
+      setIsRedirecting(false);
+      onComplete({ selected_plan: selected });
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -154,11 +180,13 @@ export function Step3PlanSelection({ data, onComplete, onBack }: Props) {
 
       <StepNav
         onBack={onBack}
-        onContinue={() => {
-          if (!selected) { setError("Please select a plan to continue"); return; }
-          onComplete({ selected_plan: selected });
-        }}
-        continueLabel={`Continue with ${PLANS.find((p) => p.id === selected)?.name ?? "selected plan"} →`}
+        isLoading={isRedirecting}
+        onContinue={handleContinue}
+        continueLabel={
+          isRedirecting
+            ? "Redirecting to payment…"
+            : `Continue with ${PLANS.find((p) => p.id === selected)?.name ?? "selected plan"} →`
+        }
       />
     </div>
   );

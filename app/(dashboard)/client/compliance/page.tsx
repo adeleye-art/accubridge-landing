@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { PageHeader } from "@/components/shared/page-header";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { TopBanner } from "./_components/top-banner";
@@ -15,7 +16,13 @@ import { ComplianceBreakdown, ActionItem, KYCData, CompliancePassport } from "@/
 import {
   useGetComplianceCentreDashboardQuery,
   useSubmitKycMutation,
+  useGetAmlReportQuery,
+  useReviewAmlMutation,
+  useGetComplianceDocumentsQuery,
   ComplianceSectionBreakdown,
+  AmlReport,
+  DocumentsResponse,
+  ComplianceDocument,
 } from "@/lib/api/complianceCentreApi";
 import { useToast } from "@/components/shared/toast";
 
@@ -290,8 +297,12 @@ function mapCategory(category: string): Pick<ActionItem, "action_type" | "sectio
 }
 
 export default function CompliancePage() {
+  const router = useRouter();
   const { data: centreData } = useGetComplianceCentreDashboardQuery();
+  const { data: amlData, isLoading: amlLoading } = useGetAmlReportQuery();
+  const { data: documentsData, isLoading: documentsLoading } = useGetComplianceDocumentsQuery();
   const [submitKyc] = useSubmitKycMutation();
+  const [reviewAml] = useReviewAmlMutation();
   const { toast } = useToast();
 
   const [openSectionKey, setOpenSectionKey] = useState<string | null>(null);
@@ -305,6 +316,7 @@ export default function CompliancePage() {
   const [connectDefaultTab, setConnectDefaultTab] = useState<"bank" | "tax">("bank");
   const [fixOpen, setFixOpen] = useState(false);
   const [fixType, setFixType] = useState<FixType>("reconcile");
+  const [amlReportData, setAmlReportData] = useState<AmlReport | null>(null);
 
   // Map API icon keys → section card keys
   const ICON_TO_KEY: Record<string, keyof ComplianceBreakdown> = {
@@ -342,6 +354,90 @@ export default function CompliancePage() {
       ...mapCategory(t.category),
     }));
 
+  // Merge mock breakdown with real AML and Documents data when available
+  const breakdown = (() => {
+    let updated = { ...MOCK_BREAKDOWN };
+
+    // Update with AML data
+    if (amlData) {
+      updated = {
+        ...updated,
+        risk: {
+          ...updated.risk,
+          earned: amlData.amlScreeningStatus === "All Clear" ? 15 : 0,
+          missing: amlData.amlScreeningStatus === "All Clear" ? [] : ["AML / sanctions screening not yet completed (0/15)"],
+          checks: [
+            {
+              label: "Sanctions screening clear",
+              status: amlData.sanctionsScreeningStatus === "Clear" ? "pass" : "pending",
+              points: amlData.sanctionsScreeningStatus === "Clear" ? 5 : 0,
+              max: 5,
+              source: "Sumsub",
+              source_type: "api" as const,
+              detail: amlData.sanctionsScreeningStatus === "Clear"
+                ? "No matches found across OFAC, UN, EU, and UK sanctions lists."
+                : "No matches found across OFAC, UN, EU, and UK sanctions lists.",
+              checked_at: amlData.lastScannedAt || new Date().toISOString(),
+            },
+            {
+              label: "PEP check clear",
+              status: !amlData.hasPepFlags ? "pass" : "pending",
+              points: !amlData.hasPepFlags ? 5 : 0,
+              max: 5,
+              source: "Sumsub",
+              source_type: "api" as const,
+              detail: !amlData.hasPepFlags
+                ? "Not identified as a Politically Exposed Person or close associate."
+                : "PEP check runs automatically when KYC verification is complete.",
+              checked_at: amlData.lastScannedAt || new Date().toISOString(),
+            },
+            {
+              label: "Adverse media check clear",
+              status: amlData.adverseMediaStatus === "Clear" ? "pass" : "pending",
+              points: amlData.adverseMediaStatus === "Clear" ? 5 : 0,
+              max: 5,
+              source: "Sumsub",
+              source_type: "api" as const,
+              detail: amlData.adverseMediaStatus === "Clear"
+                ? "No relevant adverse media results from global news database scan."
+                : "Adverse media check runs automatically when KYC verification is complete.",
+              checked_at: amlData.lastScannedAt || new Date().toISOString(),
+            },
+          ],
+        },
+      };
+    }
+
+    // Update with Documents data
+    if (documentsData?.documents && documentsData.documents.length > 0) {
+      const docs = documentsData.documents;
+      const uploadedDocCount = docs.filter(d => d.status === "Verified" || d.status === "InProgress").length;
+      const earnedPoints = Math.min(uploadedDocCount * 3, 10);
+      
+      updated = {
+        ...updated,
+        documents: {
+          ...updated.documents,
+          earned: earnedPoints,
+          passed: docs.filter(d => d.status === "Verified").map(d => `${d.documentType}: ${d.fileName}`),
+          missing: uploadedDocCount > 0 ? [] : [],
+          checks: docs.map((doc, idx) => ({
+            label: `${doc.documentType}: ${doc.fileName}`,
+            status: doc.status === "Verified" ? "pass" : "review",
+            points: doc.status === "Verified" ? 3 : 1,
+            max: 3,
+            source: "User submitted",
+            source_type: "user_input" as const,
+            detail: `Status: ${doc.status} · Uploaded: ${new Date(doc.uploadedAt).toLocaleDateString("en-GB")} · Size: ${(doc.fileSizeBytes / 1024).toFixed(2)} KB`,
+            checked_at: doc.uploadedAt,
+          })),
+        },
+      };
+    }
+
+    return updated;
+  })();
+
   const handleAction = (item: ActionItem) => {
     setOpenSectionKey(item.section);
   };
@@ -355,6 +451,7 @@ export default function CompliancePage() {
     if (fixType === "name_match") { setFixType("name_match"); setFixOpen(true); return; }
     if (fixType === "registration_number") { setFixType("registration_number"); setFixOpen(true); return; }
     if (fixType === "entity_status") { setFixType("entity_status"); setFixOpen(true); return; }
+    if (fixType === "onboarding") { router.push("/onboarding"); return; }
     if (fixType === "business_profile") { setFixType("business_profile"); setFixOpen(true); return; }
     if (fixType === "registration") { setFixType("name_match"); setFixOpen(true); return; }
 
@@ -374,8 +471,22 @@ export default function CompliancePage() {
     if (fixType === "financial_setup") { setConnectDefaultTab("bank"); setConnectOpen(true); return; }
 
     // AML / Risk
-    if (fixType === "alerts_review") { setFixType("alerts_review"); setFixOpen(true); return; }
-    if (fixType === "aml_review") { setFixType("alerts_review"); setFixOpen(true); return; }
+    if (fixType === "alerts_review") {
+      if (amlData) {
+        setAmlReportData(amlData);
+      }
+      setFixType("alerts_review");
+      setFixOpen(true);
+      return;
+    }
+    if (fixType === "aml_review") {
+      if (amlData) {
+        setAmlReportData(amlData);
+      }
+      setFixType("alerts_review");
+      setFixOpen(true);
+      return;
+    }
 
     // Documents
     if (fixType === "documents_upload") { setFixType("documents_upload"); setFixOpen(true); return; }
@@ -404,15 +515,15 @@ export default function CompliancePage() {
         fullName: data.full_name,
         dateOfBirth: data.dob,
         nationality: data.nationality,
-        phoneNumber: "",
-        email: "",
+        phoneNumber: data.phone_number,
+        email: data.email,
         residentialAddress: [data.address, data.city, data.postcode].filter(Boolean).join(", "),
         idType: data.id_type === "passport" ? "Passport"
               : data.id_type === "drivers_licence" ? "DriversLicence"
               : "NationalId",
         idNumber: data.id_number,
         idExpiryDate: data.id_expiry,
-        idDocumentUrl: "",
+        idDocumentUrl: data.id_document_url || "",
       }).unwrap();
       toast({ title: "KYC submitted successfully", variant: "success" });
     } catch {
@@ -470,7 +581,7 @@ export default function CompliancePage() {
               <SectionCard
                 key={key}
                 sectionKey={key}
-                section={MOCK_BREAKDOWN[key]}
+                section={breakdown[key]}
                 apiSection={apiSectionMap[key]}
                 onAction={(fixType) => handleSectionAction(key, fixType)}
                 externalOpen={openSectionKey === key}

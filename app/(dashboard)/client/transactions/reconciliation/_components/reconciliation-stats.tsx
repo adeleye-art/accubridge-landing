@@ -12,8 +12,9 @@ export function ReconciliationGauge({ stats, isLoaded }: { stats: Reconciliation
   const pct     = isLoaded && stats.total > 0 ? stats.matched / stats.total : 0;
   const r       = 52;
   const circ    = 2 * Math.PI * r;
-  const filled  = pct * circ;
-  const color   = pct === 1 ? BRAND.green : pct >= 0.5 ? BRAND.accent : BRAND.gold;
+  // When 100% matched (matched === total), use nearly full circle to avoid SVG rendering gap
+  const filled  = stats.matched === stats.total && isLoaded ? circ * 0.998 : pct * circ;
+  const color   = pct >= 0.999 ? BRAND.green : pct >= 0.5 ? BRAND.accent : BRAND.gold;
 
   return (
     <div

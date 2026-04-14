@@ -4,6 +4,7 @@ import React, { useRef, useState } from "react";
 import { Upload, CheckCircle2, FileText, Receipt, Link2, X } from "lucide-react";
 import type { Step4Data } from "@/types/onboarding";
 import { FormField, FormSelect, StepNav } from "./form-primitives";
+import { useUpdateClientFinancialMutation } from "@/lib/api/clientApi";
 
 const BRAND = { primary: "#0A2463", gold: "#D4AF37", green: "#06D6A0", accent: "#3E92CC", muted: "#6B7280" };
 
@@ -90,11 +91,12 @@ function UploadCard({
 interface Props {
   data: Partial<Step4Data>;
   operatingCountry: string;
+  userId: number | null;
   onComplete: (data: Step4Data) => void;
   onBack: () => void;
 }
 
-export function Step4FinancialSetup({ data, operatingCountry, onComplete, onBack }: Props) {
+export function Step4FinancialSetup({ data, operatingCountry, userId, onComplete, onBack }: Props) {
   const [form, setForm] = useState<Step4Data>({
     bank_connected:      data.bank_connected      ?? false,
     bank_name:           data.bank_name           ?? "",
@@ -103,6 +105,27 @@ export function Step4FinancialSetup({ data, operatingCountry, onComplete, onBack
     receipts_uploaded:   data.receipts_uploaded   ?? false,
     receipts_count:      data.receipts_count      ?? 0,
   });
+
+  const [isSaving, setIsSaving] = useState(false);
+  const [apiError, setApiError] = useState("");
+  const [updateClientFinancial] = useUpdateClientFinancialMutation();
+
+  async function handleContinue() {
+    if (!userId) { onComplete(form); return; }
+    setIsSaving(true);
+    setApiError("");
+    try {
+      await updateClientFinancial({
+        id:   userId,
+        body: { bankName: form.bank_name || undefined, employeeCount: 0, companySize: 0 },
+      });
+      onComplete(form);
+    } catch {
+      setApiError("Failed to save your financial setup. Please check your connection and try again.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   const banks = operatingCountry === "nigeria" ? BANKS_NG
     : operatingCountry === "both" ? [...new Set([...BANKS_UK, ...BANKS_NG])]
@@ -200,7 +223,8 @@ export function Step4FinancialSetup({ data, operatingCountry, onComplete, onBack
         />
       </div>
 
-      <StepNav onBack={onBack} onContinue={() => onComplete(form)} />
+      {apiError && <p className="text-sm text-red-400 text-center">{apiError}</p>}
+      <StepNav onBack={onBack} isLoading={isSaving} onContinue={handleContinue} />
     </div>
   );
 }

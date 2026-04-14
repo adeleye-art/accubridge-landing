@@ -7,6 +7,7 @@ import {
   loadOnboardingProgress,
   saveOnboardingProgress,
 } from "@/lib/onboarding";
+import { getAuthUserId } from "@/lib/auth";
 import { EMPTY_ONBOARDING } from "@/types/onboarding";
 import type {
   OnboardingProgress,
@@ -33,15 +34,14 @@ export default function OnboardingPage() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
   const [animateIn, setAnimateIn] = useState(false);
+  const [clientId, setClientId] = useState<number | null>(null);
 
-  /* ── Load saved progress on mount ── */
+  /* ── Load saved progress on mount + resolve client ID ── */
   useEffect(() => {
     const saved = loadOnboardingProgress();
-    if (saved) {
-      setProgress(saved);
-    }
+    if (saved) setProgress(saved);
+    setClientId(getAuthUserId());
     setIsLoaded(true);
-    // Trigger enter animation after mount
     setTimeout(() => setAnimateIn(true), 50);
   }, [router]);
 
@@ -188,6 +188,7 @@ export default function OnboardingPage() {
         return (
           <Step1BusinessInfo
             data={progress.step1}
+            userId={clientId}
             onComplete={(d: Step1Data) => markStepComplete(1, d, "step1")}
           />
         );
@@ -196,6 +197,7 @@ export default function OnboardingPage() {
           <Step2TaxSetup
             data={progress.step2}
             operatingCountry={operatingCountry}
+            userId={clientId}
             onComplete={(d: Step2Data) => markStepComplete(2, d, "step2")}
             onBack={goBack}
           />
@@ -204,6 +206,7 @@ export default function OnboardingPage() {
         return (
           <Step3PlanSelection
             data={progress.step3}
+            email={progress.step1.owner_email}
             onComplete={(d: Step3Data) => markStepComplete(3, d, "step3")}
             onBack={goBack}
           />
@@ -213,6 +216,7 @@ export default function OnboardingPage() {
           <Step4FinancialSetup
             data={progress.step4}
             operatingCountry={operatingCountry}
+            userId={clientId}
             onComplete={(d: Step4Data) => markStepComplete(4, d, "step4")}
             onBack={goBack}
           />
@@ -221,6 +225,7 @@ export default function OnboardingPage() {
         return (
           <Step5Verification
             data={progress.step5}
+            userId={clientId}
             onComplete={handleFinish}
             onBack={goBack}
           />

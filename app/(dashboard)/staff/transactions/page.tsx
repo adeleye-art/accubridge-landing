@@ -13,6 +13,7 @@ import {
   useUpdateTransactionMutation,
   ApiTransaction,
 } from "@/lib/api/transactionApi";
+import { useGetClientsQuery } from "@/lib/api/clientApi";
 
 const BRAND = { gold: "#D4AF37", accent: "#3E92CC", muted: "#6B7280", primary: "#0A2463" };
 
@@ -36,21 +37,33 @@ interface TxFormState {
   amount: string;
   description: string;
   referenceNo: string;
+  userId: string;
 }
 
-const EMPTY_FORM: TxFormState = { type: 2, date: "", category: "", amount: "", description: "", referenceNo: "" };
+const EMPTY_FORM: TxFormState = { type: 2, date: "", category: "", amount: "", description: "", referenceNo: "", userId: "" };
 
 function TransactionForm({
   form,
   setForm,
   categories,
+  clients,
 }: {
   form: TxFormState;
   setForm: React.Dispatch<React.SetStateAction<TxFormState>>;
   categories: string[];
+  clients?: any[];
 }) {
   return (
     <div className="flex flex-col gap-4">
+      {clients && clients.length > 0 && (
+        <div>
+          <label className="block text-sm font-medium mb-2" style={labelStyle}>Client <span style={{ color: BRAND.muted }}></span></label>
+          <select value={form.userId} onChange={(e) => setForm((f) => ({ ...f, userId: e.target.value }))} className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none" style={inputStyle}>
+            <option value="" style={{ background: "#0A2463" }}>Select client…</option>
+            {clients.map((c) => <option key={c.id} value={c.id} style={{ background: "#0A2463" }}>{c.businessName || c.ownerName}</option>)}
+          </select>
+        </div>
+      )}
       <div>
         <label className="block text-sm font-medium mb-2" style={labelStyle}>Type</label>
         <select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: Number(e.target.value), category: "" }))} className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none" style={inputStyle}>
@@ -89,11 +102,12 @@ function AddTransactionSheet({ open, onClose, categories }: { open: boolean; onC
   const [form, setForm] = useState<TxFormState>(EMPTY_FORM);
   const [createTransaction, { isLoading }] = useCreateTransactionMutation();
   const { toast } = useToast();
+  const { data: clientsData } = useGetClientsQuery({ pageSize: 999 });
 
   useEffect(() => { if (!open) setForm(EMPTY_FORM); }, [open]);
 
   const handleSubmit = async () => {
-    if (!form.date || !form.category || !form.amount || !form.description) {
+    if (!form.date || !form.category || !form.amount || !form.description || !form.userId) {
       toast({ title: "Please fill in all required fields", variant: "error" });
       return;
     }
@@ -105,6 +119,7 @@ function AddTransactionSheet({ open, onClose, categories }: { open: boolean; onC
         amount: parseFloat(form.amount),
         description: form.description,
         referenceNo: form.referenceNo || null,
+        userId: form.userId || null,
       }).unwrap();
       toast({ title: "Transaction added", variant: "success" });
       onClose();
@@ -124,7 +139,7 @@ function AddTransactionSheet({ open, onClose, categories }: { open: boolean; onC
           </button>
         </div>
       }>
-      <TransactionForm form={form} setForm={setForm} categories={categories} />
+      <TransactionForm form={form} setForm={setForm} categories={categories} clients={clientsData?.clients} />
     </SystemSheet>
   );
 }
@@ -143,6 +158,7 @@ function EditTransactionSheet({ tx, onClose, categories }: { tx: ApiTransaction 
         amount: String(tx.amount),
         description: tx.description,
         referenceNo: tx.referenceNo ?? "",
+        userId: "",
       });
     }
   }, [tx]);
@@ -240,9 +256,9 @@ export default function StaffTransactionsPage() {
         {summary && (
           <div className="grid grid-cols-3 gap-4">
             {[
-              { label: "Total Income",   value: summary.totalIncome,   color: "#06D6A0", prefix: "+" },
-              { label: "Total Expenses", value: summary.totalExpenses, color: "#ef4444", prefix: "-" },
-              { label: "Net Profit",     value: summary.netProfit,     color: summary.netProfit >= 0 ? "#06D6A0" : "#ef4444", prefix: "" },
+              { label: "Total Income",   value: summary.totalIncome ?? 0,   color: "#06D6A0", prefix: "+" },
+              { label: "Total Expenses", value: summary.totalExpenses ?? 0, color: "#ef4444", prefix: "-" },
+              { label: "Net Profit",     value: summary.netProfit ?? 0,     color: (summary.netProfit ?? 0) >= 0 ? "#06D6A0" : "#ef4444", prefix: "" },
             ].map((s) => (
               <div key={s.label} className="rounded-2xl p-4 border" style={{ backgroundColor: "rgba(255,255,255,0.04)", borderColor: "rgba(255,255,255,0.08)" }}>
                 <div className="text-xs mb-1" style={{ color: BRAND.muted }}>{s.label}</div>

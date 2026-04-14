@@ -92,6 +92,7 @@ interface DirectorEntry {
 interface KYBFormData {
   jurisdiction: string;
   companiesHouseNumber: string;
+  submittedLegalName: string;
   directorsJson: string;
   certificateOfIncorporationUrl: string;
 }
@@ -99,6 +100,7 @@ interface KYBFormData {
 function KYBForm({ onSubmit }: { onSubmit: (data: KYBFormData) => void }) {
   const [country, setCountry] = useState<"uk" | "ng">("uk");
   const [regNumber, setRegNumber] = useState("");
+  const [legalName, setLegalName] = useState("");
   const [directors, setDirectors] = useState<DirectorEntry[]>([{ id: "d1", name: "" }]);
   const [certFile, setCertFile] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -121,6 +123,7 @@ function KYBForm({ onSubmit }: { onSubmit: (data: KYBFormData) => void }) {
   const validate = () => {
     const e: Record<string, string> = {};
     if (!regNumber.trim()) e.regNumber = "Required";
+    if (!legalName.trim()) e.legalName = "Required";
     if (directors.some((d) => !d.name.trim())) e.directors = "All directors must have names";
     if (!certFile) e.certFile = "Please upload your Certificate of Incorporation";
     setErrors(e);
@@ -181,6 +184,25 @@ function KYBForm({ onSubmit }: { onSubmit: (data: KYBFormData) => void }) {
           onBlur={onFocusOut}
         />
         {errors.regNumber && <span className="text-xs text-red-400">{errors.regNumber}</span>}
+      </div>
+
+      {/* Legal Name */}
+      <div className="flex flex-col gap-1.5">
+        <FieldLabel required>Legal Business Name</FieldLabel>
+        <input
+          type="text"
+          placeholder="Enter your registered legal business name"
+          value={legalName}
+          onChange={(e) => setLegalName(e.target.value)}
+          className={inputBase}
+          style={{ ...inputStyle, borderColor: errors.legalName ? "#ef4444" : "rgba(255,255,255,0.1)" }}
+          onFocus={onFocusIn}
+          onBlur={onFocusOut}
+        />
+        {errors.legalName && <span className="text-xs text-red-400">{errors.legalName}</span>}
+        <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.3)" }}>
+          Submit the official registered business name from {country === "uk" ? "Companies House" : "CAC"}
+        </span>
       </div>
 
       {/* Directors */}
@@ -277,6 +299,7 @@ function KYBForm({ onSubmit }: { onSubmit: (data: KYBFormData) => void }) {
             onSubmit({
               jurisdiction: country === "uk" ? "GB" : "NG",
               companiesHouseNumber: regNumber.trim(),
+              submittedLegalName: legalName.trim(),
               directorsJson: JSON.stringify(directors.map((d) => d.name.trim())),
               certificateOfIncorporationUrl: certFile,
             });

@@ -50,18 +50,19 @@ export default function ReconciliationDetailPage() {
     const lines = detail.lines ?? [];
     const matchedLines   = lines.filter((l) => l.matchStatus === "Matched");
     const unmatchedLines = lines.filter((l) => l.matchStatus === "Unmatched");
+    const flaggedLines   = lines.filter((l) => l.matchStatus === "Flagged");
     return {
       total:           detail.totalLines,
-      matched:         detail.matchedCount,
-      unmatched:       detail.unmatchedCount,
-      flagged:         detail.flaggedCount,
+      matched:         detail.matchedCount ?? matchedLines.length,
+      unmatched:       detail.unmatchedCount ?? unmatchedLines.length,
+      flagged:         detail.flaggedCount ?? flaggedLines.length,
       matchedAmount:   matchedLines.reduce((s, l) => s + Math.abs(l.amount), 0),
       unmatchedAmount: unmatchedLines.reduce((s, l) => s + Math.abs(l.amount), 0),
     };
   }, [detail]);
 
   const autoMatchCandidates = detail?.autoMatchCount ?? 0;
-  const canFinalize = !!(detail && detail.unmatchedCount === 0 && detail.matchedCount > 0);
+  const canFinalize = detail?.canFinalise ?? false;
 
   // ── Handlers ──────────────────────────────────────────────────────────────────
 
@@ -77,10 +78,10 @@ export default function ReconciliationDetailPage() {
 
   async function handleFinalize() {
     const result = await finalise(id);
-    if ("data" in result && result.data?.success) {
+    if ("data" in result && result.data) {
       toast({ variant: "success", title: "Reconciliation finalised", description: `${stats.matched} lines locked` });
       setTimeout(() => router.push("/client/transactions/reconciliation"), 1000);
-    } else {
+    } else if ("error" in result) {
       toast({ variant: "error", title: "Finalisation failed", description: "Ensure all unmatched lines are resolved." });
     }
     setConfirmFinalize(false);

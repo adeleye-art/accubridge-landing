@@ -3,11 +3,12 @@
 import React, { useState } from "react";
 import { CheckCircle2, AlertOctagon, Clock, CheckCheck, Plus, Info, Loader2 } from "lucide-react";
 import {
-  useGetCandidatesQuery,
   useMatchLineMutation,
   useFlagLineMutation,
 } from "@/lib/api/reconciliationApi";
-import type { ApiReconciliationLine, MatchCandidate } from "@/lib/api/reconciliationApi";
+import type { ApiReconciliationLine } from "@/lib/api/reconciliationApi";
+import { useGetTransactionsQuery } from "@/lib/api/transactionApi";
+import type { ApiTransaction } from "@/lib/api/transactionApi";
 
 const BRAND = { primary: "#0A2463", accent: "#3E92CC", gold: "#D4AF37", green: "#06D6A0", muted: "#6B7280" };
 
@@ -66,12 +67,12 @@ function MatchActionCell({
   reconciliationId: number;
   onAddAsNew: () => void;
 }) {
-  const [fetchCandidates, setFetchCandidates] = useState(false);
+  const [fetchTransactions, setFetchTransactions] = useState(false);
   const [selectedTxId, setSelectedTxId] = useState("");
 
-  const { data: candidates, isFetching } = useGetCandidatesQuery(
-    { id: reconciliationId, lineId: line.id },
-    { skip: !fetchCandidates || line.matchStatus === "Matched" }
+  const { data: txData, isFetching } = useGetTransactionsQuery(
+    { pageSize: 200 },
+    { skip: !fetchTransactions || line.matchStatus === "Matched" }
   );
 
   const [matchLine, { isLoading: isMatching }] = useMatchLineMutation();
@@ -100,16 +101,18 @@ function MatchActionCell({
     await flagLine({ id: reconciliationId, lineId: line.id });
   }
 
-  const renderCandidateOptions = () => {
+  const transactions = txData?.transactions ?? [];
+
+  const renderTransactionOptions = () => {
     if (isFetching) {
-      return <option disabled style={{ backgroundColor: "#0f1e3a" }}>Loading candidates…</option>;
+      return <option disabled style={{ backgroundColor: "#0f1e3a" }}>Loading transactions…</option>;
     }
-    if (!candidates || candidates.length === 0) {
-      return <option disabled style={{ backgroundColor: "#0f1e3a" }}>No candidates found</option>;
+    if (transactions.length === 0) {
+      return <option disabled style={{ backgroundColor: "#0f1e3a" }}>No transactions found</option>;
     }
-    return candidates.map((c: MatchCandidate) => (
-      <option key={c.transactionId} value={String(c.transactionId)} style={{ backgroundColor: "#0f1e3a" }}>
-        {c.date} — {c.description} (£{c.amount.toFixed(2)}) {c.confidenceScore > 0 ? `· ${Math.round(c.confidenceScore)}%` : ""}
+    return transactions.map((t: ApiTransaction) => (
+      <option key={t.id} value={String(t.id)} style={{ backgroundColor: "#0f1e3a" }}>
+        {t.dateFormatted} — {t.description} ({t.formattedAmount}){t.referenceNo ? ` · ${t.referenceNo}` : ""}
       </option>
     ));
   };
@@ -120,7 +123,7 @@ function MatchActionCell({
       <select
         value={selectedTxId}
         onChange={(e) => setSelectedTxId(e.target.value)}
-        onFocus={() => setFetchCandidates(true)}
+        onFocus={() => setFetchTransactions(true)}
         className="w-full h-8 px-2 rounded-lg text-xs border outline-none"
         style={{
           backgroundColor: "rgba(255,255,255,0.07)",
@@ -131,9 +134,9 @@ function MatchActionCell({
         }}
       >
         <option value="" style={{ backgroundColor: "#0f1e3a" }}>
-          {fetchCandidates ? "Select a transaction to match…" : "Click to load candidates…"}
+          {fetchTransactions ? "Select a transaction to match…" : "Click to load transactions…"}
         </option>
-        {fetchCandidates && renderCandidateOptions()}
+        {fetchTransactions && renderTransactionOptions()}
       </select>
 
       {/* Action buttons */}
@@ -329,13 +332,13 @@ export function ReconciliationTable({
                   <td className="px-4 py-3">
                     <div className="flex flex-col gap-1">
                       <span className="text-sm text-white font-medium">{line.description}</span>
-                      {line.matchConfidence !== null && line.matchConfidence > 0 && line.matchStatus !== "Matched" && (
-                        <ConfidencePill score={line.matchConfidence} />
+                      {line.matchConfidence !== null && line.matchConfidence !== undefined && line.matchConfidence > 0 && line.matchStatus !== "Matched" && (
+                        <ConfidencePill score={line.matchConfidence ?? 0} />
                       )}
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <AmountCell amount={line.amount} isIncome={line.isIncome} />
+                    <AmountCell amount={line.amount} isIncome={line.isIncome ?? false} />
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={line.matchStatus} />

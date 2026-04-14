@@ -4,42 +4,61 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, Ticket, CreditCard, Loader2, CheckCircle2 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
-import type { RaffleEntry } from "@/types/funding";
+import { useToast } from "@/components/shared/toast";
+import { useInitializePaymentMutation } from "@/lib/api/paymentApi";
+import { useGetFundingApplicationsQuery } from "@/lib/api/fundingApi";
 
 const BRAND = { primary: "#0A2463", gold: "#D4AF37", green: "#06D6A0", accent: "#3E92CC", muted: "#6B7280" };
 const TICKET_PRICE = 25;
-const MIN_TICKETS = 5;
+const MIN_TICKETS  = 5;
+
+function entryStatusLabel(status: string): { label: string; color: string; bg: string } {
+  switch (status) {
+    case "Submitted":
+    case "UnderReview":
+      return { label: "Active",   color: BRAND.gold,   bg: `${BRAND.gold}15`  };
+    case "Approved":
+      return { label: "Won 🎉",   color: BRAND.green,  bg: `${BRAND.green}15` };
+    case "Rejected":
+    case "Completed":
+      return { label: "Drawn",    color: BRAND.muted,  bg: "rgba(255,255,255,0.06)" };
+    default:
+      return { label: status,     color: BRAND.muted,  bg: "rgba(255,255,255,0.06)" };
+  }
+}
 
 export default function RaffleFundingPage() {
-  const [entries, setEntries] = useState<RaffleEntry[]>([]);
-  const [isEntering, setIsEntering] = useState(false);
-  const [justEntered, setJustEntered] = useState(false);
   const [pendingTickets, setPendingTickets] = useState(0);
+  const [isEntering,     setIsEntering]     = useState(false);
 
-  const activeEntries = entries.filter((e) => e.status === "active");
-  const latestEntry = activeEntries[0];
+  const { toast } = useToast();
+  const [initializePayment] = useInitializePaymentMutation();
+
+  const { data: fundingData, isLoading: entriesLoading } = useGetFundingApplicationsQuery({ type: 3, pageSize: 50 });
+  const entries   = fundingData?.applications ?? [];
+  const activeEntry = entries.find((e) => e.status === "Submitted" || e.status === "UnderReview");
+
   const canConfirm = pendingTickets >= MIN_TICKETS;
-  const totalCost = pendingTickets * TICKET_PRICE;
+  const totalCost  = pendingTickets * TICKET_PRICE;
 
   const handleBuyTicket = () => setPendingTickets((c) => c + 1);
 
   const handleConfirmEntry = async () => {
     setIsEntering(true);
-    await new Promise((res) => setTimeout(res, 1200));
-    const newEntries: RaffleEntry[] = Array.from({ length: pendingTickets }, (_, i) => ({
-      id: `r${Date.now()}-${i}`,
-      raffle_id: `RFL-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 9000) + 1000)}`,
-      raffle_number: Math.floor(Math.random() * 2000) + 1,
-      entry_date: new Date().toISOString().split("T")[0],
-      draw_date: "2026-06-30",
-      status: "active" as const,
-      entry_fee: TICKET_PRICE,
-    }));
-    setEntries((prev) => [...newEntries, ...prev]);
-    setPendingTickets(0);
-    setIsEntering(false);
-    setJustEntered(true);
-    setTimeout(() => setJustEntered(false), 3000);
+    try {
+      const email = (typeof window !== "undefined" ? localStorage.getItem("auth_user_email") : null) ?? "";
+      const result = await initializePayment({
+        amount:      totalCost,
+        email,
+        currency:    "GBP",
+        paymentType: "raffle",
+        callbackUrl: `${window.location.origin}/payment/callback?type=raffle&tickets=${pendingTickets}`,
+      }).unwrap();
+      window.location.href = result.authorizationUrl;
+    } catch {
+      toast({ title: "Failed to initialise payment. Please try again.", variant: "error" });
+      setIsEntering(false);
+    }
   };
 
   return (
@@ -48,11 +67,13 @@ export default function RaffleFundingPage() {
 
         {/* Back */}
         <div className="mb-4">
-          <Link href="/client/funding"
+          <Link
+            href="/client/funding"
             className="inline-flex items-center gap-1.5 text-sm transition-colors duration-200"
             style={{ color: BRAND.accent }}
             onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "#fff"; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = BRAND.accent; }}>
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = BRAND.accent; }}
+          >
             <ChevronLeft size={15} />Back to Funding
           </Link>
         </div>
@@ -80,10 +101,10 @@ export default function RaffleFundingPage() {
               </div>
               <div className="flex flex-col gap-4">
                 {[
-                  { step: "01", title: "Pay entry fee",       desc: "Pay a £25 entry fee to join the next quarterly raffle draw." },
-                  { step: "02", title: "Receive your ticket", desc: "You'll instantly receive a unique raffle ID and a numbered ticket." },
-                  { step: "03", title: "Wait for the draw",   desc: "Draws happen every quarter. Your entry is automatically included." },
-                  { step: "04", title: "Win funding",         desc: "Winners are selected randomly. Prize amounts vary by quarter." },
+                  { step: "01", title: "Buy tickets",        desc: `Buy at least ${MIN_TICKETS} tickets at £${TICKET_PRICE} each to enter the draw.` },
+                  { step: "02", title: "Pay securely",       desc: "Complete your payment via our secure Paystack checkout." },
+                  { step: "03", title: "Entry confirmed",    desc: "Your entry is automatically submitted. Draws happen every quarter." },
+                  { step: "04", title: "Win funding",        desc: "Winners are selected randomly. Prize amounts vary by quarter." },
                 ].map((item) => (
                   <div key={item.step} className="flex items-start gap-4">
                     <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-black flex-shrink-0"
@@ -109,10 +130,10 @@ export default function RaffleFundingPage() {
               <div className="flex-1">
                 <div className="text-sm font-semibold text-white">Entry Fee</div>
                 <div className="text-xs mt-0.5" style={{ color: BRAND.muted }}>
-                  Secure payment processed via AccuBridge · Non-refundable
+                  Secure payment via Paystack · Non-refundable
                 </div>
               </div>
-              <span className="text-2xl font-black" style={{ color: BRAND.gold }}>£25</span>
+              <span className="text-2xl font-black" style={{ color: BRAND.gold }}>£{TICKET_PRICE}</span>
             </div>
 
             {/* Next draw info */}
@@ -135,30 +156,24 @@ export default function RaffleFundingPage() {
 
             {/* CTA card */}
             <div className="rounded-2xl border p-6 flex flex-col gap-5"
-              style={{ backgroundColor: "rgba(255,255,255,0.04)", borderColor: activeEntries.length > 0 ? `${BRAND.gold}30` : "rgba(255,255,255,0.08)" }}>
-
-              {justEntered && (
-                <div className="flex items-center gap-2 px-4 py-3 rounded-xl border"
-                  style={{ backgroundColor: `${BRAND.green}12`, borderColor: `${BRAND.green}30` }}>
-                  <CheckCircle2 size={15} style={{ color: BRAND.green }} />
-                  <span className="text-sm font-medium" style={{ color: BRAND.green }}>Draw entry confirmed!</span>
-                </div>
-              )}
+              style={{ backgroundColor: "rgba(255,255,255,0.04)", borderColor: activeEntry ? `${BRAND.gold}30` : "rgba(255,255,255,0.08)" }}>
 
               {/* Active entry display */}
-              {latestEntry && (
+              {activeEntry && (
                 <div className="rounded-xl border p-4 flex flex-col gap-2"
                   style={{ backgroundColor: `${BRAND.gold}08`, borderColor: `${BRAND.gold}25` }}>
                   <div className="flex items-center gap-2 mb-1">
                     <CheckCircle2 size={14} style={{ color: BRAND.green }} />
                     <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: BRAND.green }}>Active Entry</span>
-                    <span className="ml-auto text-xs" style={{ color: BRAND.muted }}>{activeEntries.length} ticket{activeEntries.length !== 1 ? "s" : ""}</span>
                   </div>
-                  <div className="text-xl font-black font-mono" style={{ color: BRAND.gold }}>{latestEntry.raffle_id}</div>
+                  <div className="text-xl font-black font-mono" style={{ color: BRAND.gold }}>#{activeEntry.id}</div>
                   <div className="flex items-center gap-3 text-xs" style={{ color: BRAND.muted }}>
-                    <span>Ticket #{latestEntry.raffle_number}</span>
+                    <span>£{activeEntry.requestedAmount} entered</span>
                     <span>·</span>
-                    <span>Draw: {new Date(latestEntry.draw_date).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</span>
+                    <span>{activeEntry.submittedAt
+                      ? new Date(activeEntry.submittedAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
+                      : new Date(activeEntry.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}
+                    </span>
                   </div>
                 </div>
               )}
@@ -175,7 +190,7 @@ export default function RaffleFundingPage() {
               <div className="rounded-xl border p-4 flex flex-col gap-3"
                 style={{ backgroundColor: "rgba(255,255,255,0.03)", borderColor: "rgba(255,255,255,0.09)" }}>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: BRAND.muted }}>Tickets purchased</span>
+                  <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: BRAND.muted }}>Tickets selected</span>
                   <span className="text-lg font-black" style={{ color: canConfirm ? BRAND.gold : "#fff" }}>
                     {pendingTickets} <span className="text-xs font-normal" style={{ color: BRAND.muted }}>/ {MIN_TICKETS} min</span>
                   </span>
@@ -192,7 +207,7 @@ export default function RaffleFundingPage() {
                 </div>
                 {pendingTickets > 0 && (
                   <div className="flex items-center justify-between text-xs" style={{ color: BRAND.muted }}>
-                    <span>Subtotal</span>
+                    <span>Total</span>
                     <span className="font-bold text-white">£{totalCost}</span>
                   </div>
                 )}
@@ -207,10 +222,10 @@ export default function RaffleFundingPage() {
                 onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.13)"; }}
                 onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.08)"; }}
               >
-                <Ticket size={15} />Buy a ticket — £{TICKET_PRICE}
+                <Ticket size={15} />Add a ticket — £{TICKET_PRICE}
               </button>
 
-              {/* Confirm entry button — only when >= MIN_TICKETS */}
+              {/* Confirm & pay button — only when >= MIN_TICKETS */}
               {canConfirm && (
                 <button
                   type="button"
@@ -222,8 +237,8 @@ export default function RaffleFundingPage() {
                   onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
                 >
                   {isEntering
-                    ? <><Loader2 size={15} className="animate-spin" />Processing…</>
-                    : <><CheckCircle2 size={15} />Confirm entry — {pendingTickets} tickets · £{totalCost}</>}
+                    ? <><Loader2 size={15} className="animate-spin" />Redirecting to payment…</>
+                    : <><CheckCircle2 size={15} />Pay & enter — {pendingTickets} tickets · £{totalCost}</>}
                 </button>
               )}
             </div>
@@ -240,7 +255,11 @@ export default function RaffleFundingPage() {
                 </span>
               </div>
 
-              {entries.length === 0 ? (
+              {entriesLoading ? (
+                <div className="py-8 flex items-center justify-center">
+                  <Loader2 size={20} className="animate-spin" style={{ color: BRAND.muted }} />
+                </div>
+              ) : entries.length === 0 ? (
                 <div className="py-12 flex flex-col items-center gap-3">
                   <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
                     style={{ backgroundColor: "rgba(255,255,255,0.05)", color: BRAND.muted }}>
@@ -253,26 +272,31 @@ export default function RaffleFundingPage() {
                 </div>
               ) : (
                 <div className="flex flex-col">
-                  {entries.map((entry) => (
-                    <div key={entry.id}
-                      className="flex items-center justify-between px-5 py-4 border-b last:border-0"
-                      style={{ borderColor: "rgba(255,255,255,0.05)" }}>
-                      <div>
-                        <div className="text-sm font-bold font-mono" style={{ color: BRAND.gold }}>{entry.raffle_id}</div>
-                        <div className="text-xs mt-0.5" style={{ color: BRAND.muted }}>
-                          #{entry.raffle_number} · {new Date(entry.entry_date).toLocaleDateString("en-GB")}
+                  {entries.map((entry) => {
+                    const { label, color, bg } = entryStatusLabel(entry.status);
+                    return (
+                      <div
+                        key={entry.id}
+                        className="flex items-center justify-between px-5 py-4 border-b last:border-0"
+                        style={{ borderColor: "rgba(255,255,255,0.05)" }}
+                      >
+                        <div>
+                          <div className="text-sm font-bold font-mono" style={{ color: BRAND.gold }}>Entry #{entry.id}</div>
+                          <div className="text-xs mt-0.5" style={{ color: BRAND.muted }}>
+                            £{entry.requestedAmount} · {entry.submittedAt
+                              ? new Date(entry.submittedAt).toLocaleDateString("en-GB")
+                              : new Date(entry.createdAt).toLocaleDateString("en-GB")}
+                          </div>
                         </div>
+                        <span
+                          className="text-[10px] font-bold px-2.5 py-1 rounded-full border"
+                          style={{ backgroundColor: bg, color, borderColor: `${color}30` }}
+                        >
+                          {label}
+                        </span>
                       </div>
-                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-full border"
-                        style={{
-                          backgroundColor: entry.status === "active" ? `${BRAND.gold}15` : "rgba(255,255,255,0.06)",
-                          color: entry.status === "active" ? BRAND.gold : BRAND.muted,
-                          borderColor: entry.status === "active" ? `${BRAND.gold}30` : "rgba(255,255,255,0.1)",
-                        }}>
-                        {entry.status === "active" ? "Active" : entry.status === "won" ? "Won 🎉" : "Drawn"}
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

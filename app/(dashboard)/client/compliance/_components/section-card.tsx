@@ -1,15 +1,15 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   CheckCircle2, XCircle, Clock, ChevronRight, Upload, Link2,
   Search, Wrench, X, User, Building2, Calculator, Landmark,
-  ShieldAlert, FileText, Activity,
+  ShieldAlert, FileText, Activity, Loader2,
 } from "lucide-react";
 import { SectionScore, EvidenceCheck } from "@/types/compliance";
 import { getSectionHex } from "@/lib/compliance/calculate-score";
 import { SystemSheet } from "@/components/shared/system-sheet";
-import { ComplianceSectionBreakdown } from "@/lib/api/complianceCentreApi";
+import { ComplianceSectionBreakdown, useGetKycStatusQuery, useGetKybStatusQuery } from "@/lib/api/complianceCentreApi";
 
 const BRAND = { primary: "#0A2463", gold: "#D4AF37", green: "#06D6A0", accent: "#3E92CC", muted: "#6B7280" };
 
@@ -105,7 +105,7 @@ function CheckRow({ check, sectionKey, onAction }: { check: EvidenceCheck; secti
       if (check.label.includes("Registration number")) return { label: "Add Number", type: "registration_number" };
       if (check.label.includes("Legal name")) return { label: "Fix Name", type: "name_match" };
       if (check.label.includes("Entity status")) return { label: "Verify Status", type: "entity_status" };
-      if (check.label.includes("Core profile")) return { label: "Complete Profile", type: "business_profile" };
+      if (check.label.includes("Core profile")) return { label: "Complete Profile", type: "onboarding" };
     }
 
     // Tax Setup
@@ -153,7 +153,6 @@ function CheckRow({ check, sectionKey, onAction }: { check: EvidenceCheck; secti
       className="flex items-start gap-3 px-4 py-3.5 border-b last:border-0"
       style={{ borderColor: "rgba(255,255,255,0.05)" }}
     >
-      <div className="flex-shrink-0 mt-0.5">{statusIcon}</div>
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium text-white">{check.label}</div>
         {check.detail && (
@@ -179,12 +178,6 @@ function CheckRow({ check, sectionKey, onAction }: { check: EvidenceCheck; secti
         </div>
       </div>
       <div className="flex-shrink-0 flex flex-col items-end gap-2">
-        <span
-          className="text-xs font-bold"
-          style={{ color: check.status === "pass" ? BRAND.green : check.status === "fail" ? "#ef4444" : BRAND.muted }}
-        >
-          {check.points}/{check.max}
-        </span>
         {action && onAction && (
           <button
             type="button"
@@ -217,6 +210,28 @@ interface SectionCardProps {
 
 export function SectionCard({ sectionKey, section, onAction, apiSection, externalOpen, onExternalClose }: SectionCardProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [showIdentityDetails, setShowIdentityDetails] = useState(false);
+  
+  // Fetch identity data when drawer opens for identity section
+  const { data: kycData, isLoading: kycLoading } = useGetKycStatusQuery(undefined, {
+    skip: sectionKey !== "identity" || !(drawerOpen || externalOpen),
+  });
+  const { data: kybData, isLoading: kybLoading } = useGetKybStatusQuery(undefined, {
+    skip: sectionKey !== "identity" || !(drawerOpen || externalOpen),
+  });
+
+  // Update drawerOpen when externalOpen changes
+  useEffect(() => {
+    if (externalOpen) {
+      setDrawerOpen(true);
+    }
+  }, [externalOpen]);
+
+  useEffect(() => {
+    if (sectionKey === "identity" && (drawerOpen || externalOpen) && (kycData || kybData)) {
+      setShowIdentityDetails(true);
+    }
+  }, [sectionKey, drawerOpen, externalOpen, kycData, kybData]);
 
   // Prefer live API values; fall back to static structure for checks/labels
   const earned      = apiSection !== undefined ? (apiSection.score ?? 0) : section.earned;
@@ -282,7 +297,7 @@ export function SectionCard({ sectionKey, section, onAction, apiSection, externa
         )}
 
         {/* Missing */}
-        {section.missing.length > 0 && (
+        {section.missing.length > 0 && sectionKey !== "registration" && sectionKey !== "tax" && sectionKey !== "documents" && (
           <div className="px-5 pb-3 flex flex-col gap-1">
             {section.missing.slice(0, 2).map((item) => (
               <div key={item} className="flex items-start gap-1.5">
@@ -321,31 +336,110 @@ export function SectionCard({ sectionKey, section, onAction, apiSection, externa
       >
         <div className="flex flex-col gap-5">
 
-          {/* Score summary */}
-          <div
-            className="rounded-xl border p-4 flex items-center gap-4"
-            style={{ backgroundColor: `${accentColor}08`, borderColor: `${accentColor}20` }}
-          >
-            <div
-              className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{ backgroundColor: `${accentColor}15`, color: accentColor }}
-            >
-              {icon}
+          {/* Identity Details for Identity & Verification section */}
+          {sectionKey === "identity" && showIdentityDetails && (kycData || kybData) ? (
+            <div className="flex flex-col gap-3">
+              {/* KYC Status Card */}
+              {kycData && (
+                <div
+                  className="rounded-xl border p-4 flex flex-col gap-3"
+                  style={{ backgroundColor: "rgba(62,146,204,0.06)", borderColor: "rgba(62,146,204,0.15)" }}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-semibold uppercase tracking-widest" style={{ color: BRAND.accent }}>
+                      Identity (KYC)
+                    </div>
+                    {kycData.status && statusBadge(kycData.status)}
+                  </div>
+
+
+
+                  {/* Government ID Section */}
+                  {(kycData.idType || kycData.idNumber || kycData.idExpiryDate || kycData.residentialAddress) && (
+                    <div className="flex flex-col gap-2 pt-3 border-t" style={{ borderColor: "rgba(62,146,204,0.2)" }}>
+                      <span className="text-xs font-semibold" style={{ color: BRAND.accent }}>Government ID</span>
+                      <div className="grid grid-cols-1 gap-2 text-sm">
+                        {kycData.idType && (
+                          <div className="flex justify-between">
+                            <span style={{ color: "rgba(255,255,255,0.5)" }}>ID Type:</span>
+                            <span className="text-white font-medium">{kycData.idType}</span>
+                          </div>
+                        )}
+                        {kycData.idNumber && (
+                          <div className="flex justify-between">
+                            <span style={{ color: "rgba(255,255,255,0.5)" }}>ID Number:</span>
+                            <span className="text-white font-medium">{kycData.idNumber}</span>
+                          </div>
+                        )}
+                        {kycData.idExpiryDate && (
+                          <div className="flex justify-between">
+                            <span style={{ color: "rgba(255,255,255,0.5)" }}>ID Expiry:</span>
+                            <span className="text-white font-medium">{kycData.idExpiryDate}</span>
+                          </div>
+                        )}
+                        {kycData.residentialAddress && (
+                          <div className="flex justify-between">
+                            <span style={{ color: "rgba(255,255,255,0.5)" }}>Address:</span>
+                            <span className="text-white font-medium">{kycData.residentialAddress}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* KYB Status Card */}
+              {kybData && (
+                <div
+                  className="rounded-xl border p-4 flex flex-col gap-3"
+                  style={{ backgroundColor: "rgba(6,214,160,0.06)", borderColor: "rgba(6,214,160,0.15)" }}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-semibold uppercase tracking-widest" style={{ color: BRAND.green }}>
+                      Business (KYB)
+                    </div>
+                    {kybData.status && statusBadge(kybData.status)}
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 text-sm">
+                    {kybData.jurisdiction && (
+                      <div className="flex justify-between">
+                        <span style={{ color: "rgba(255,255,255,0.5)" }}>Jurisdiction:</span>
+                        <span className="text-white font-medium">{kybData.jurisdiction}</span>
+                      </div>
+                    )}
+                    {kybData.companiesHouseNumber && (
+                      <div className="flex justify-between">
+                        <span style={{ color: "rgba(255,255,255,0.5)" }}>Registration Number:</span>
+                        <span className="text-white font-medium">{kybData.companiesHouseNumber}</span>
+                      </div>
+                    )}
+                    {kybData.submittedLegalName && (
+                      <div className="flex justify-between">
+                        <span style={{ color: "rgba(255,255,255,0.5)" }}>Legal Name:</span>
+                        <span className="text-white font-medium">{kybData.submittedLegalName}</span>
+                      </div>
+                    )}
+                    {kybData.officialLegalName && (
+                      <div className="flex justify-between">
+                        <span style={{ color: "rgba(255,255,255,0.5)" }}>Official Name:</span>
+                        <span className="text-white font-medium">{kybData.officialLegalName}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {(kycLoading || kybLoading) && (
+                <div className="flex items-center justify-center gap-2 py-4" style={{ color: BRAND.accent }}>
+                  <Loader2 size={14} className="animate-spin" />
+                  <span className="text-xs">Fetching verification details…</span>
+                </div>
+              )}
             </div>
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: BRAND.muted }}>Section Score</span>
-                {apiSection && statusBadge(apiSection.status)}
-              </div>
-              <div className="flex items-end gap-1">
-                <span className="text-3xl font-extrabold" style={{ color: accentColor }}>{earned}</span>
-                <span className="text-base mb-0.5" style={{ color: BRAND.muted }}>/ {max}</span>
-              </div>
-              <div className="mt-1.5 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: "rgba(255,255,255,0.07)" }}>
-                <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: accentColor }} />
-              </div>
-            </div>
-          </div>
+          ) : (
+            <>
+          {/* Score summary - REMOVED entirely */}
 
           {/* Passed / Missing summary */}
           {(section.passed.length > 0 || section.missing.length > 0) && (
@@ -364,7 +458,7 @@ export function SectionCard({ sectionKey, section, onAction, apiSection, externa
                   ))}
                 </div>
               )}
-              {section.missing.length > 0 && (
+              {section.missing.length > 0 && sectionKey !== "registration" && sectionKey !== "tax" && sectionKey !== "documents" && (
                 <div
                   className="rounded-xl border p-3 flex flex-col gap-2"
                   style={{ backgroundColor: "rgba(239,68,68,0.06)", borderColor: "rgba(239,68,68,0.20)" }}
@@ -380,26 +474,50 @@ export function SectionCard({ sectionKey, section, onAction, apiSection, externa
               )}
             </div>
           )}
+            </>
+          )}
 
-          {/* Evidence checks */}
-          <div className="flex flex-col gap-2">
-            <div className="text-xs font-semibold uppercase tracking-widest" style={{ color: BRAND.muted }}>
-              Evidence &amp; Source
+          {/* Evidence checks - always show for all sections */}
+          {section.checks && section.checks.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <div className="text-xs font-semibold uppercase tracking-widest" style={{ color: BRAND.muted }}>
+                Evidence &amp; Source
+              </div>
+              <div
+                className="rounded-xl border overflow-hidden"
+                style={{ backgroundColor: "rgba(255,255,255,0.03)", borderColor: "rgba(255,255,255,0.08)" }}
+              >
+                {section.checks
+                  .filter((check) => {
+                    // Hide specific checks for registration section
+                    if (sectionKey === "registration") {
+                      if (check.label.includes("Registration number provided")) return false;
+                      if (check.label.includes("Entity status active")) return false;
+                    }
+                    // Hide specific checks for tax section
+                    if (sectionKey === "tax") {
+                      if (check.label.includes("Tax ID provided")) return false;
+                      if (check.label.includes("VAT / payroll setup declared")) return false;
+                      if (check.label.includes("Filing calendar not configured")) return false;
+                      if (check.label.includes("HMRC obligations not synced")) return false;
+                    }
+                    // Hide specific checks for documents section
+                    if (sectionKey === "documents") {
+                      if (check.label.includes("No expired core document")) return false;
+                    }
+                    return true;
+                  })
+                  .map((check) => (
+                    <CheckRow
+                      key={check.label}
+                      check={check}
+                      sectionKey={sectionKey}
+                      onAction={(fixType) => { onAction(fixType); }}
+                    />
+                  ))}
+              </div>
             </div>
-            <div
-              className="rounded-xl border overflow-hidden"
-              style={{ backgroundColor: "rgba(255,255,255,0.03)", borderColor: "rgba(255,255,255,0.08)" }}
-            >
-              {section.checks.map((check) => (
-                <CheckRow
-                  key={check.label}
-                  check={check}
-                  sectionKey={sectionKey}
-                  onAction={(fixType) => { onAction(fixType); }}
-                />
-              ))}
-            </div>
-          </div>
+          )}
 
         </div>
 

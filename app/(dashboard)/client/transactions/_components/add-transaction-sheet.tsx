@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { SystemSheet } from "@/components/shared/system-sheet";
+import { useGetTransactionCategoriesQuery } from "@/lib/api/transactionApi";
 
 export type TxType = "Income" | "Expense";
 
@@ -13,28 +14,6 @@ export interface TransactionFormData {
   amount: string;
   reference: string;
 }
-
-const INCOME_CATEGORIES = [
-  "Sales Revenue",
-  "Service Fees",
-  "Consulting",
-  "Investment Returns",
-  "Grants & Funding",
-  "Other Income",
-];
-
-const EXPENSE_CATEGORIES = [
-  "Salaries & Wages",
-  "Office Rent",
-  "Utilities",
-  "Software & Tools",
-  "Marketing & Ads",
-  "Travel & Transport",
-  "Professional Services",
-  "Equipment",
-  "Insurance",
-  "Other Expense",
-];
 
 const EMPTY: TransactionFormData = {
   date: new Date().toISOString().slice(0, 10),
@@ -81,6 +60,7 @@ const inputStyle: React.CSSProperties = {
 
 export function AddTransactionSheet({ open, onClose, onSave, initial, mode = "add" }: Props) {
   const [form, setForm] = useState<TransactionFormData>(EMPTY);
+  const { data: categoriesData, isLoading: isLoadingCategories } = useGetTransactionCategoriesQuery();
 
   useEffect(() => {
     if (open) {
@@ -88,7 +68,9 @@ export function AddTransactionSheet({ open, onClose, onSave, initial, mode = "ad
     }
   }, [open, initial]);
 
-  const categories = form.type === "Income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  const incomeCategories = categoriesData?.incomeCategories || [];
+  const expenseCategories = categoriesData?.expenseCategories || [];
+  const categories = form.type === "Income" ? incomeCategories : expenseCategories;
 
   function set<K extends keyof TransactionFormData>(key: K, value: TransactionFormData[K]) {
     setForm((prev) => ({
@@ -213,9 +195,10 @@ export function AddTransactionSheet({ open, onClose, onSave, initial, mode = "ad
             value={form.category}
             onChange={(e) => set("category", e.target.value)}
             required
-            style={{ ...inputStyle, appearance: "none" }}
+            disabled={isLoadingCategories}
+            style={{ ...inputStyle, appearance: "none", opacity: isLoadingCategories ? 0.5 : 1 }}
           >
-            <option value="">Select category…</option>
+            <option value="">{isLoadingCategories ? "Loading categories..." : "Select category…"}</option>
             {categories.map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}

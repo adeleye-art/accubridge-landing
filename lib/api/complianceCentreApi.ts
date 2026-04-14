@@ -84,6 +84,7 @@ export interface KybStatus {
 export interface SubmitKybInput {
   jurisdiction: string;
   companiesHouseNumber: string;
+  submittedLegalName: string;
   directorsJson: string;
   certificateOfIncorporationUrl: string;
 }

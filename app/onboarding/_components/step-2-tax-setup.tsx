@@ -3,6 +3,9 @@
 import React, { useState } from "react";
 import type { Step2Data } from "@/types/onboarding";
 import { FormField, FormInput, FormSelect, FormToggle, StepNav } from "./form-primitives";
+import { useUpdateClientTaxSetupMutation } from "@/lib/api/clientApi";
+
+const ACCOUNTING_BASIS_TO_INT: Record<string, number> = { cash: 0, accrual: 1 };
 
 const MONTHS = [
   "January","February","March","April","May","June",
@@ -13,11 +16,12 @@ const OPT = { backgroundColor: "#0f1e3a" };
 interface Props {
   data: Partial<Step2Data>;
   operatingCountry: string;
+  userId: number | null;
   onComplete: (data: Step2Data) => void;
   onBack: () => void;
 }
 
-export function Step2TaxSetup({ data, operatingCountry, onComplete, onBack }: Props) {
+export function Step2TaxSetup({ data, operatingCountry, userId, onComplete, onBack }: Props) {
   const [form, setForm] = useState<Step2Data>({
     tax_id:             data.tax_id             ?? "",
     vat_registered:     data.vat_registered     ?? false,
@@ -27,7 +31,11 @@ export function Step2TaxSetup({ data, operatingCountry, onComplete, onBack }: Pr
     financial_year_end: data.financial_year_end ?? "",
     accounting_basis:   data.accounting_basis   ?? "",
   });
-  const [errors, setErrors] = useState<Partial<Record<keyof Step2Data, string>>>({});
+  const [errors,   setErrors]   = useState<Partial<Record<keyof Step2Data, string>>>({});
+  const [apiError, setApiError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+
+  const [updateClientTaxSetup] = useUpdateClientTaxSetupMutation();
 
   const isUK      = operatingCountry === "uk"      || operatingCountry === "both";
   const isNigeria = operatingCountry === "nigeria"  || operatingCountry === "both";
@@ -46,6 +54,29 @@ export function Step2TaxSetup({ data, operatingCountry, onComplete, onBack }: Pr
     if (form.vat_registered && !form.vat_number.trim()) e.vat_number = "VAT number is required";
     setErrors(e);
     return Object.keys(e).length === 0;
+  }
+
+  async function handleContinue() {
+    if (!validate()) return;
+    if (!userId) { onComplete(form); return; }
+
+    setIsSaving(true);
+    setApiError("");
+    try {
+      await updateClientTaxSetup({
+        id: userId,
+        body: {
+          corporationTaxUtr:  form.tax_id,
+          financialYearEnd:   form.financial_year_end,
+          accountingBasis:    ACCOUNTING_BASIS_TO_INT[form.accounting_basis] ?? 0,
+        },
+      });
+      onComplete(form);
+    } catch {
+      setApiError("Failed to save your tax setup. Please check your connection and try again.");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   const sectionStyle = {
@@ -126,7 +157,8 @@ export function Step2TaxSetup({ data, operatingCountry, onComplete, onBack }: Pr
         </div>
       </div>
 
-      <StepNav onBack={onBack} onContinue={() => { if (validate()) onComplete(form); }} />
+      {apiError && <p className="text-sm text-red-400 text-center">{apiError}</p>}
+      <StepNav onBack={onBack} isLoading={isSaving} onContinue={handleContinue} />
     </div>
   );
 }

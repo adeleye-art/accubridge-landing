@@ -8,7 +8,6 @@ import { useToast } from "@/components/shared/toast";
 import { formatAmountRaw, type SupportedCurrency } from "@/lib/currency";
 import {
   useGetFundingApplicationsQuery,
-  useGetFundingSummaryQuery,
   useReviewFundingApplicationMutation,
   type ApiFundingApplication,
 } from "@/lib/api/fundingApi";
@@ -16,10 +15,11 @@ import {
 const BRAND = { gold: "#D4AF37", accent: "#3E92CC", muted: "#6B7280", primary: "#0A2463" };
 
 type TabType = "raffle" | "compliance" | "investor";
+const TAB_TYPE_MAP: Record<TabType, number> = { raffle: 3, compliance: 5, investor: 4 };
 
 function apiStatusToDisplay(status: string): string {
   switch (status) {
-    case "Draft":
+    case "Draft":       return "Draft";
     case "Submitted":   return "Pending";
     case "UnderReview": return "Under Review";
     case "Approved":    return "Approved";
@@ -31,12 +31,11 @@ function apiStatusToDisplay(status: string): string {
 
 function statusStyle(display: string) {
   switch (display) {
-    case "Approved":     return { color: "#06D6A0", bg: "rgba(6,214,160,0.1)"   };
-    case "Pending":      return { color: "#D4AF37", bg: "rgba(212,175,55,0.1)"  };
-    case "Rejected":     return { color: "#ef4444", bg: "rgba(239,68,68,0.1)"   };
-    case "Under Review": return { color: "#3E92CC", bg: "rgba(62,146,204,0.1)"  };
-    case "Completed":    return { color: "#06D6A0", bg: "rgba(6,214,160,0.1)"   };
-    default:             return { color: "#6B7280", bg: "rgba(107,114,128,0.1)" };
+    case "Approved":    return { color: "#06D6A0", bg: "rgba(6,214,160,0.1)"   };
+    case "Pending":     return { color: "#D4AF37", bg: "rgba(212,175,55,0.1)"  };
+    case "Rejected":    return { color: "#ef4444", bg: "rgba(239,68,68,0.1)"   };
+    case "Under Review":return { color: "#3E92CC", bg: "rgba(62,146,204,0.1)"  };
+    default:            return { color: "#6B7280", bg: "rgba(107,114,128,0.1)" };
   }
 }
 
@@ -46,18 +45,7 @@ function scoreColor(score: number) {
   return "#ef4444";
 }
 
-function SkeletonRow({ cols }: { cols: number }) {
-  return (
-    <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-      {Array.from({ length: cols }).map((_, i) => (
-        <td key={i} className="px-5 py-3.5">
-          <div className="h-4 rounded animate-pulse" style={{ backgroundColor: "rgba(255,255,255,0.08)", width: i === 0 ? "70%" : "50%" }} />
-        </td>
-      ))}
-    </tr>
-  );
-}
-
+// ─── Action buttons ───────────────────────────────────────────────────────────
 function ApproveRejectButtons({
   app,
   onApprove,
@@ -93,32 +81,47 @@ function ApproveRejectButtons({
   );
 }
 
+// ─── Skeleton row ─────────────────────────────────────────────────────────────
+function SkeletonRow({ cols }: { cols: number }) {
+  return (
+    <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+      {Array.from({ length: cols }).map((_, i) => (
+        <td key={i} className="px-5 py-3.5">
+          <div className="h-4 rounded animate-pulse" style={{ backgroundColor: "rgba(255,255,255,0.08)", width: i === 0 ? "70%" : "50%" }} />
+        </td>
+      ))}
+    </tr>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
-export default function AdminFundingPage() {
-  const [activeTab,   setActiveTab]   = useState<TabType>("raffle");
+export default function StaffFundingPage() {
+  const [activeTab, setActiveTab] = useState<TabType>("raffle");
   const [rejectDialog, setRejectDialog] = useState<{ open: boolean; app: ApiFundingApplication | null }>({ open: false, app: null });
   const { toast } = useToast();
 
-  const { data: raffleData,     isLoading: raffleLoading }     = useGetFundingApplicationsQuery({ type: 3, pageSize: 50 });
-  const { data: complianceData, isLoading: complianceLoading } = useGetFundingApplicationsQuery({ type: 5, pageSize: 50 });
-  const { data: investorData,   isLoading: investorLoading }   = useGetFundingApplicationsQuery({ type: 4, pageSize: 50 });
-  const { data: summary } = useGetFundingSummaryQuery();
-  const [reviewApplication] = useReviewFundingApplicationMutation();
+  const { data: raffleData,     isLoading: raffleLoading }     = useGetFundingApplicationsQuery({ type: TAB_TYPE_MAP.raffle,     pageSize: 50 });
+  const { data: complianceData, isLoading: complianceLoading } = useGetFundingApplicationsQuery({ type: TAB_TYPE_MAP.compliance, pageSize: 50 });
+  const { data: investorData,   isLoading: investorLoading }   = useGetFundingApplicationsQuery({ type: TAB_TYPE_MAP.investor,   pageSize: 50 });
+  const [reviewApplication]  = useReviewFundingApplicationMutation();
 
   const currentData    = activeTab === "raffle" ? raffleData    : activeTab === "compliance" ? complianceData    : investorData;
   const currentLoading = activeTab === "raffle" ? raffleLoading : activeTab === "compliance" ? complianceLoading : investorLoading;
 
+  // Only show non-Draft, non-Cancelled applications
+  const visibleApps = (currentData?.applications ?? []).filter(
+    (a) => a.status !== "Draft" && a.status !== "Cancelled",
+  );
+
+  // Summary from all three datasets
   const allApps = [
     ...(raffleData?.applications ?? []),
     ...(complianceData?.applications ?? []),
     ...(investorData?.applications ?? []),
-  ];
+  ].filter((a) => a.status !== "Draft" && a.status !== "Cancelled");
 
-  const pendingCount  = summary?.submittedCount  ?? allApps.filter((a) => a.status === "Submitted" || a.status === "UnderReview").length;
-  const approvedCount = summary?.approvedCount   ?? allApps.filter((a) => a.status === "Approved").length;
-  const totalCount    = summary?.totalApplications ?? allApps.length;
-
-  const currency: SupportedCurrency = "GBP";
+  const pendingCount     = allApps.filter((a) => a.status === "Submitted" || a.status === "UnderReview").length;
+  const approvedCount    = allApps.filter((a) => a.status === "Approved").length;
 
   const handleApprove = async (app: ApiFundingApplication) => {
     try {
@@ -132,7 +135,7 @@ export default function AdminFundingPage() {
   const handleReject = async () => {
     if (!rejectDialog.app) return;
     try {
-      await reviewApplication({ id: rejectDialog.app.id, body: { approve: false, rejectionReason: "Rejected by admin", notes: "" } }).unwrap();
+      await reviewApplication({ id: rejectDialog.app.id, body: { approve: false, rejectionReason: "Rejected by staff", notes: "" } }).unwrap();
       toast({ title: "Application rejected", variant: "success" });
     } catch {
       toast({ title: "Failed to reject application", variant: "error" });
@@ -150,11 +153,7 @@ export default function AdminFundingPage() {
   const thStyle = "px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wide";
   const tdStyle = "px-5 py-3.5";
 
-  // Raffle table headers
-  const raffleHeaders     = ["Business / Purpose", "Amount Requested", "Submitted", "Status", "Actions"];
-  const complianceHeaders = ["Business / Purpose", "Score", "Amount Requested", "Submitted", "Status", "Actions"];
-  const investorHeaders   = ["Business / Purpose", "Amount Requested", "Submitted", "Status", "Actions"];
-  const currentHeaders    = activeTab === "raffle" ? raffleHeaders : activeTab === "compliance" ? complianceHeaders : investorHeaders;
+  const currency: SupportedCurrency = "GBP";
 
   return (
     <div className="p-5 md:p-8 text-white">
@@ -162,17 +161,17 @@ export default function AdminFundingPage() {
 
         {/* Header */}
         <div>
-          <div className="inline-block border rounded-lg px-3 py-1 text-xs mb-2" style={{ borderColor: "rgba(255,255,255,0.1)", color: BRAND.muted }}>Admin</div>
-          <h1 className="text-2xl font-bold tracking-tight">Funding Queue</h1>
-          <p className="text-sm mt-0.5" style={{ color: BRAND.muted }}>Review and action all funding applications.</p>
+          <div className="inline-block border rounded-lg px-3 py-1 text-xs mb-2" style={{ borderColor: "rgba(255,255,255,0.1)", color: BRAND.muted }}>Staff</div>
+          <h1 className="text-2xl font-bold tracking-tight">Funding Review</h1>
+          <p className="text-sm mt-0.5" style={{ color: BRAND.muted }}>Review and action funding applications from your clients.</p>
         </div>
 
         {/* Summary stats */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           {[
             { label: "Pending Review",      value: pendingCount,  color: BRAND.gold   },
-            { label: "Approved This Month", value: approvedCount, color: "#06D6A0"    },
-            { label: "Total Applications",  value: totalCount,    color: BRAND.accent },
+            { label: "Approved",            value: approvedCount, color: "#06D6A0"    },
+            { label: "Total Applications",  value: allApps.length, color: BRAND.accent },
           ].map((s) => (
             <div key={s.label} className="rounded-2xl p-4 border" style={{ backgroundColor: "rgba(255,255,255,0.04)", borderColor: "rgba(255,255,255,0.08)" }}>
               <div className="text-2xl font-bold" style={{ color: s.color }}>{s.value}</div>
@@ -205,7 +204,12 @@ export default function AdminFundingPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                  {currentHeaders.map((h) => (
+                  {(activeTab === "raffle"
+                    ? ["Business / Purpose", "Amount Requested", "Submitted", "Status", "Actions"]
+                    : activeTab === "compliance"
+                    ? ["Business / Purpose", "Score", "Amount Requested", "Submitted", "Status", "Actions"]
+                    : ["Business / Purpose", "Amount Requested", "Submitted", "Status", "Actions"]
+                  ).map((h) => (
                     <th key={h} className={thStyle} style={{ color: BRAND.muted }}>{h}</th>
                   ))}
                 </tr>
@@ -213,22 +217,18 @@ export default function AdminFundingPage() {
               <tbody>
                 {currentLoading ? (
                   Array.from({ length: 3 }).map((_, i) => (
-                    <SkeletonRow key={i} cols={currentHeaders.length} />
+                    <SkeletonRow key={i} cols={activeTab === "compliance" ? 6 : 5} />
                   ))
-                ) : (currentData?.applications ?? []).length === 0 ? (
+                ) : visibleApps.length === 0 ? (
                   <tr>
-                    <td colSpan={currentHeaders.length} className="px-5 py-12 text-center text-sm" style={{ color: BRAND.muted }}>
-                      No applications found
+                    <td colSpan={activeTab === "compliance" ? 6 : 5} className="px-5 py-12 text-center text-sm" style={{ color: BRAND.muted }}>
+                      No applications to review
                     </td>
                   </tr>
                 ) : (
-                  (currentData?.applications ?? []).map((app) => {
+                  visibleApps.map((app) => {
                     const display = apiStatusToDisplay(app.status);
                     const ss = statusStyle(display);
-                    const submittedDate = app.submittedAt
-                      ? new Date(app.submittedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" })
-                      : new Date(app.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" });
-
                     return (
                       <tr key={app.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
                         <td className={tdStyle + " font-medium max-w-xs"}>
@@ -236,10 +236,14 @@ export default function AdminFundingPage() {
                           <div className="text-[11px] mt-0.5" style={{ color: BRAND.muted }}>ID: {app.id}</div>
                         </td>
                         {activeTab === "compliance" && (
-                          <td className={tdStyle + " font-bold"} style={{ color: scoreColor(75) }}>—</td>
+                          <td className={tdStyle + " font-bold"} style={{ color: scoreColor(app.requestedAmount > 0 ? 75 : 0) }}>—</td>
                         )}
                         <td className={tdStyle}>{formatAmountRaw(app.requestedAmount, currency)}</td>
-                        <td className={tdStyle} style={{ color: BRAND.muted }}>{submittedDate}</td>
+                        <td className={tdStyle} style={{ color: BRAND.muted }}>
+                          {app.submittedAt
+                            ? new Date(app.submittedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" })
+                            : new Date(app.createdAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" })}
+                        </td>
                         <td className={tdStyle}>
                           <span className="text-xs font-medium px-2.5 py-1 rounded-full" style={{ color: ss.color, backgroundColor: ss.bg }}>
                             {display}

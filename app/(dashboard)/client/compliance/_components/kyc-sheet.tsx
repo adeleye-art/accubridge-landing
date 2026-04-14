@@ -38,6 +38,16 @@ interface IDDocument {
   file_name?: string;
 }
 
+interface PersonalInfo {
+  full_name: string;
+  dob: string;
+  nationality: string;
+  country: "uk" | "nigeria";
+  address: string;
+  phone_number: string;
+  email: string;
+}
+
 function IDDocumentEntry({
   index,
   doc,
@@ -145,8 +155,153 @@ function IDDocumentEntry({
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) onChange({ ...doc, file_name: f.name });
+              if (f) {
+                onChange({ ...doc, file_name: f.name });
+                // Store the actual file object with a key (for primary ID)
+                if (index === 0) {
+                  const reader = new FileReader();
+                  reader.onload = (event) => {
+                    const base64 = event.target?.result as string;
+                    onChange({ ...doc, file_name: f.name });
+                  };
+                  reader.readAsDataURL(f);
+                }
+              }
             }}
+          />
+        </FField>
+      </div>
+    </div>
+  );
+}
+
+function PersonalInfoEntry({
+  index,
+  info,
+  onChange,
+  onRemove,
+  canRemove,
+  error,
+}: {
+  index: number;
+  info: PersonalInfo;
+  onChange: (info: PersonalInfo) => void;
+  onRemove: () => void;
+  canRemove: boolean;
+  error?: Partial<Record<keyof PersonalInfo, string>>;
+}) {
+  return (
+    <div
+      className="rounded-xl border p-4 flex flex-col gap-4"
+      style={{ backgroundColor: "rgba(255,255,255,0.03)", borderColor: "rgba(255,255,255,0.08)" }}
+    >
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold uppercase tracking-widest" style={{ color: BRAND.accent }}>
+          {index === 0 ? "Primary Information" : `Additional Person ${index}`}
+        </span>
+        {canRemove && (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="flex items-center gap-1 text-xs transition-opacity hover:opacity-70"
+            style={{ color: "#ef4444" }}
+          >
+            <Trash2 size={12} /> Remove
+          </button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <FField label="Full Legal Name" required={index === 0} error={error?.full_name}>
+          <input
+            type="text"
+            placeholder="Jane Okonkwo"
+            value={info.full_name}
+            onChange={(e) => onChange({ ...info, full_name: e.target.value })}
+            className={inputBase}
+            style={inputStyle}
+            onFocus={onFocus}
+            onBlur={onBlur}
+          />
+        </FField>
+
+        <FField label="Date of Birth" required={index === 0} error={error?.dob}>
+          <input
+            type="date"
+            value={info.dob}
+            onChange={(e) => onChange({ ...info, dob: e.target.value })}
+            className={inputBase}
+            style={{ ...inputStyle, colorScheme: "dark" as const }}
+            onFocus={onFocus}
+            onBlur={onBlur}
+          />
+        </FField>
+
+        <FField label="Nationality" required={index === 0} error={error?.nationality}>
+          <input
+            type="text"
+            placeholder="British / Nigerian"
+            value={info.nationality}
+            onChange={(e) => onChange({ ...info, nationality: e.target.value })}
+            className={inputBase}
+            style={inputStyle}
+            onFocus={onFocus}
+            onBlur={onBlur}
+          />
+        </FField>
+
+        <FField label="Country of Residence" required={index === 0} error={error?.country}>
+          <select
+            value={info.country || "uk"}
+            onChange={(e) => onChange({ ...info, country: e.target.value as "uk" | "nigeria" })}
+            className={`${inputBase} appearance-none cursor-pointer`}
+            style={{ ...inputStyle, colorScheme: "dark" as const }}
+            onFocus={onFocus}
+            onBlur={onBlur}
+          >
+            <option value="uk" style={{ backgroundColor: "#0f1e3a" }}>🇬🇧 United Kingdom</option>
+            <option value="nigeria" style={{ backgroundColor: "#0f1e3a" }}>🇳🇬 Nigeria</option>
+          </select>
+        </FField>
+
+        <div className="sm:col-span-2">
+          <FField label="Residential Address" error={error?.address}>
+            <input
+              type="text"
+              placeholder="123 Business Street, London"
+              value={info.address}
+              onChange={(e) => onChange({ ...info, address: e.target.value })}
+              className={inputBase}
+              style={inputStyle}
+              onFocus={onFocus}
+              onBlur={onBlur}
+            />
+          </FField>
+        </div>
+
+        <FField label="Phone Number" required={index === 0} error={error?.phone_number}>
+          <input
+            type="tel"
+            placeholder="+44 123 456 7890"
+            value={info.phone_number}
+            onChange={(e) => onChange({ ...info, phone_number: e.target.value })}
+            className={inputBase}
+            style={inputStyle}
+            onFocus={onFocus}
+            onBlur={onBlur}
+          />
+        </FField>
+
+        <FField label="Email Address" required={index === 0} error={error?.email}>
+          <input
+            type="email"
+            placeholder="jane@example.com"
+            value={info.email}
+            onChange={(e) => onChange({ ...info, email: e.target.value })}
+            className={inputBase}
+            style={inputStyle}
+            onFocus={onFocus}
+            onBlur={onBlur}
           />
         </FField>
       </div>
@@ -164,13 +319,48 @@ interface KYCSheetProps {
 export function KYCSheet({ isOpen, onClose, existingData, onSubmit }: KYCSheetProps) {
   const [step, setStep] = useState<"form" | "processing" | "success" | "failed">("form");
   const [form, setForm] = useState<Partial<KYCData>>(existingData || { country: "uk" });
+  const [personalInfos, setPersonalInfos] = useState<PersonalInfo[]>([{
+    full_name: existingData?.full_name || "",
+    dob: existingData?.dob || "",
+    nationality: existingData?.nationality || "",
+    country: "uk",
+    address: existingData?.address || "",
+    phone_number: existingData?.phone_number || "",
+    email: existingData?.email || "",
+  }]);
   const [ids, setIds] = useState<IDDocument[]>([{ id_type: "", id_number: "", id_expiry: "" }]);
   const [errors, setErrors] = useState<Partial<Record<keyof KYCData, string>>>({});
+  const [personalInfoErrors, setPersonalInfoErrors] = useState<Partial<Record<keyof PersonalInfo, string>>[]>([{}]);
   const [idErrors, setIdErrors] = useState<Partial<Record<keyof IDDocument, string>>[]>([{}]);
+  const [idDocumentFile, setIdDocumentFile] = useState<File | null>(null);
+  const [idDocumentUrl, setIdDocumentUrl] = useState("");
 
   const set = (k: keyof KYCData) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
       setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const addPersonalInfo = () => {
+    if (personalInfos.length >= 3) return;
+    setPersonalInfos((prev) => [...prev, {
+      full_name: "",
+      dob: "",
+      nationality: "",
+      country: "uk",
+      address: "",
+      phone_number: "",
+      email: "",
+    }]);
+    setPersonalInfoErrors((prev) => [...prev, {}]);
+  };
+
+  const updatePersonalInfo = (i: number, info: PersonalInfo) => {
+    setPersonalInfos((prev) => prev.map((p, idx) => idx === i ? info : p));
+  };
+
+  const removePersonalInfo = (i: number) => {
+    setPersonalInfos((prev) => prev.filter((_, idx) => idx !== i));
+    setPersonalInfoErrors((prev) => prev.filter((_, idx) => idx !== i));
+  };
 
   const addId = () => {
     if (ids.length >= 3) return;
@@ -189,11 +379,16 @@ export function KYCSheet({ isOpen, onClose, existingData, onSubmit }: KYCSheetPr
 
   const validate = () => {
     let valid = true;
-    const e: Partial<Record<keyof KYCData, string>> = {};
-    if (!form.full_name?.trim()) { e.full_name = "Required"; valid = false; }
-    if (!form.dob)               { e.dob = "Required"; valid = false; }
-    if (!form.nationality?.trim()) { e.nationality = "Required"; valid = false; }
-    setErrors(e);
+    
+    // Validate primary personal info
+    const primaryInfo = personalInfos[0];
+    const e: Partial<Record<keyof PersonalInfo, string>> = {};
+    if (!primaryInfo.full_name?.trim()) { e.full_name = "Required"; valid = false; }
+    if (!primaryInfo.dob) { e.dob = "Required"; valid = false; }
+    if (!primaryInfo.nationality?.trim()) { e.nationality = "Required"; valid = false; }
+    if (!primaryInfo.phone_number?.trim()) { e.phone_number = "Required"; valid = false; }
+    if (!primaryInfo.email?.trim()) { e.email = "Required"; valid = false; }
+    setPersonalInfoErrors([e, ...personalInfoErrors.slice(1)]);
 
     const newIdErrors = ids.map((doc, i) => {
       if (i > 0 && !doc.id_type && !doc.id_number && !doc.id_expiry) return {};
@@ -211,12 +406,22 @@ export function KYCSheet({ isOpen, onClose, existingData, onSubmit }: KYCSheetPr
     if (!validate()) return;
     setStep("processing");
     try {
+      const primaryInfo = personalInfos[0];
       const primaryId = ids[0];
       await onSubmit({
-        ...form,
+        full_name: primaryInfo.full_name,
+        dob: primaryInfo.dob,
+        nationality: primaryInfo.nationality,
+        phone_number: primaryInfo.phone_number,
+        email: primaryInfo.email,
+        address: primaryInfo.address,
+        city: "",
+        postcode: "",
+        country: primaryInfo.country,
         id_type: primaryId.id_type as KYCData["id_type"],
         id_number: primaryId.id_number,
         id_expiry: primaryId.id_expiry,
+        id_document_url: idDocumentUrl || (primaryId.file_name ? `${primaryId.file_name}` : ""),
       } as KYCData);
       setStep("success");
     } catch {
@@ -247,9 +452,21 @@ export function KYCSheet({ isOpen, onClose, existingData, onSubmit }: KYCSheetPr
           type="button"
           onClick={() => {
             setForm({ country: "uk" });
+            setPersonalInfos([{
+              full_name: "",
+              dob: "",
+              nationality: "",
+              country: "uk",
+              address: "",
+              phone_number: "",
+              email: "",
+            }]);
             setIds([{ id_type: "", id_number: "", id_expiry: "" }]);
             setErrors({});
+            setPersonalInfoErrors([{}]);
             setIdErrors([{}]);
+            setIdDocumentFile(null);
+            setIdDocumentUrl("");
             setStep("form");
           }}
           className="flex-1 h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200"
@@ -322,56 +539,42 @@ export function KYCSheet({ isOpen, onClose, existingData, onSubmit }: KYCSheetPr
             AccuBridge complies with FCA and FIRS data protection requirements.
           </div>
 
-          {/* Personal info */}
-          <div
-            className="rounded-2xl border p-4 flex flex-col gap-4"
-            style={{ backgroundColor: "rgba(255,255,255,0.03)", borderColor: "rgba(255,255,255,0.08)" }}
-          >
-            <div className="text-[11px] font-bold uppercase tracking-widest" style={{ color: BRAND.accent }}>
-              Personal Information
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <FField label="Full Legal Name" required error={errors.full_name}>
-                <input
-                  type="text" placeholder="Jane Okonkwo"
-                  value={form.full_name || ""} onChange={set("full_name")}
-                  className={inputBase} style={inputStyle} onFocus={onFocus} onBlur={onBlur}
-                />
-              </FField>
-              <FField label="Date of Birth" required error={errors.dob}>
-                <input
-                  type="date" value={form.dob || ""} onChange={set("dob")}
-                  className={inputBase} style={{ ...inputStyle, colorScheme: "dark" as const }}
-                  onFocus={onFocus} onBlur={onBlur}
-                />
-              </FField>
-              <FField label="Nationality" required error={errors.nationality}>
-                <input
-                  type="text" placeholder="British / Nigerian"
-                  value={form.nationality || ""} onChange={set("nationality")}
-                  className={inputBase} style={inputStyle} onFocus={onFocus} onBlur={onBlur}
-                />
-              </FField>
-              <FField label="Country of Residence">
-                <select
-                  value={form.country || "uk"} onChange={set("country")}
-                  className={`${inputBase} appearance-none cursor-pointer`}
-                  style={{ ...inputStyle, colorScheme: "dark" as const }}
-                  onFocus={onFocus} onBlur={onBlur}
-                >
-                  <option value="uk" style={{ backgroundColor: "#0f1e3a" }}>🇬🇧 United Kingdom</option>
-                  <option value="nigeria" style={{ backgroundColor: "#0f1e3a" }}>🇳🇬 Nigeria</option>
-                </select>
-              </FField>
-              <div className="sm:col-span-2">
-                <FField label="Residential Address">
-                  <input
-                    type="text" placeholder="123 Business Street, London"
-                    value={form.address || ""} onChange={set("address")}
-                    className={inputBase} style={inputStyle} onFocus={onFocus} onBlur={onBlur}
-                  />
-                </FField>
+          {/* Personal Information — multiple */}
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-widest" style={{ color: BRAND.accent }}>
+                  Personal Information
+                </div>
+                <div className="text-[10px] mt-0.5" style={{ color: "rgba(255,255,255,0.35)" }}>
+                  You can add up to 3 personal information entries
+                </div>
               </div>
+              {personalInfos.length < 3 && (
+                <button
+                  type="button"
+                  onClick={addPersonalInfo}
+                  className="flex items-center gap-1.5 text-xs font-semibold px-3 h-8 rounded-lg border transition-all duration-200"
+                  style={{ backgroundColor: `${BRAND.accent}10`, borderColor: `${BRAND.accent}25`, color: BRAND.accent }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${BRAND.accent}20`; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = `${BRAND.accent}10`; }}
+                >
+                  <Plus size={13} />Add another
+                </button>
+              )}
+            </div>
+            <div className="flex flex-col gap-4">
+              {personalInfos.map((info, i) => (
+                <PersonalInfoEntry
+                  key={i}
+                  index={i}
+                  info={info}
+                  onChange={(updated) => updatePersonalInfo(i, updated)}
+                  onRemove={() => removePersonalInfo(i)}
+                  canRemove={i > 0}
+                  error={personalInfoErrors[i]}
+                />
+              ))}
             </div>
           </div>
 
