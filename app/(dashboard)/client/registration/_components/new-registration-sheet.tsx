@@ -10,6 +10,15 @@ import {
   NigeriaRegistrationData,
   BusinessRegistration,
 } from "@/types/tools";
+import {
+  useCreateBusinessRegistrationMutation,
+  useUpdateUKRegistrationMutation,
+  useUpdateNGRegistrationMutation,
+  useSubmitBusinessRegistrationMutation,
+  useSaveDraftBusinessRegistrationMutation,
+  UpdateUKRegistrationInput,
+  UpdateNGRegistrationInput,
+} from "@/lib/api/businessRegistrationApi";
 
 const BRAND = {
   primary: "#0A2463",
@@ -1066,11 +1075,28 @@ function NGStep4({
   );
 }
 
+// ── Structure / type mappings ──────────────────────────────────────────────────
+
+const UK_STRUCTURE_API_MAP: Record<string, string> = {
+  private_limited: "LimitedCompany",
+  llp: "LimitedLiabilityPartnership",
+  sole_trader: "SoleTrader",
+  partnership: "Partnership",
+  community_interest: "Other",
+};
+
+const NG_TYPE_API_MAP: Record<string, string> = {
+  business_name: "Business Name",
+  limited_liability: "Private Limited Company",
+  incorporated_trustee: "Incorporated Trustee",
+  unlimited_company: "Unlimited Company",
+};
+
 // ── Main sheet component ────────────────────────────────────────────────────────
 interface NewRegistrationSheetProps {
   isOpen: boolean;
   onClose: () => void;
-  onComplete: (reg: Omit<BusinessRegistration, "id">) => Promise<void>;
+  onComplete: () => void;
   editRegistration?: BusinessRegistration | null;
 }
 
@@ -1095,6 +1121,13 @@ export function NewRegistrationSheet({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [draftSaved, setDraftSaved] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
+
+  const [createRegistration] = useCreateBusinessRegistrationMutation();
+  const [updateUK] = useUpdateUKRegistrationMutation();
+  const [updateNG] = useUpdateNGRegistrationMutation();
+  const [submitRegistration] = useSubmitBusinessRegistrationMutation();
+  const [saveDraftRegistration] = useSaveDraftBusinessRegistrationMutation();
 
   // Sync state whenever the sheet opens (handles resume / switching registrations)
   useEffect(() => {
@@ -1104,6 +1137,7 @@ export function NewRegistrationSheet({
       setUkData(editRegistration?.uk_data || {});
       setNgData(editRegistration?.nigeria_data || {});
       setDraftSaved(false);
+      setApiError(null);
     }
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1113,57 +1147,112 @@ export function NewRegistrationSheet({
     setUkData({});
     setNgData({});
     setDraftSaved(false);
+    setApiError(null);
     onClose();
   };
 
+  // ── Shared: get or create the API registration ID ──────────────────────────
+  const getOrCreateId = async (jurisdiction: number): Promise<number | null> => {
+    if (editRegistration?.id) return Number(editRegistration.id);
+    try {
+      const created = await createRegistration({ jurisdiction }).unwrap();
+      return created.id;
+    } catch {
+      setApiError("Failed to create registration. Please try again.");
+      return null;
+    }
+  };
+
+  // ── Build UK payload from collected form data ──────────────────────────────
+  const buildUKPayload = (currentStep: number): UpdateUKRegistrationInput => ({
+    step: currentStep,
+    structure: ukData.business_structure
+      ? UK_STRUCTURE_API_MAP[ukData.business_structure] ?? undefined
+      : undefined,
+    businessName: ukData.proposed_company_name || undefined,
+    alternativeName: ukData.alternative_name || undefined,
+    registeredAddress: ukData.registered_address || undefined,
+    city: ukData.city || undefined,
+    postcode: ukData.postcode || undefined,
+    sicCode: ukData.sic_code || undefined,
+    directorFullName: ukData.director_full_name || undefined,
+    directorNationality: ukData.director_nationality || undefined,
+    directorDateOfBirth: ukData.director_dob || undefined,
+    shareCapital: ukData.share_capital ? Number(ukData.share_capital) : undefined,
+    numberOfShares: ukData.number_of_shares ? Number(ukData.number_of_shares) : undefined,
+    modelArticles: ukData.agree_model_articles,
+    confirmationStatement: ukData.confirmation_statement,
+  });
+
+  // ── Build NG payload from collected form data ──────────────────────────────
+  const buildNGPayload = (currentStep: number): UpdateNGRegistrationInput => ({
+    step: currentStep,
+    businessType: ngData.business_type
+      ? NG_TYPE_API_MAP[ngData.business_type] ?? undefined
+      : undefined,
+    proposedName1: ngData.proposed_name_1 || undefined,
+    proposedName2: ngData.proposed_name_2 || undefined,
+    natureOfBusiness: ngData.business_nature || undefined,
+    proprietorFullName: ngData.proprietor_full_name || undefined,
+    proprietorDateOfBirth: ngData.proprietor_dob || undefined,
+    proprietorPhone: ngData.proprietor_phone || undefined,
+    proprietorEmail: ngData.proprietor_email || undefined,
+    residentialAddress: ngData.proprietor_address || undefined,
+    state: ngData.state || undefined,
+    businessAddress: ngData.registered_address || undefined,
+    paymentConfirmed: ngData.payment_confirmed,
+  });
+
+  // ── Save Draft ─────────────────────────────────────────────────────────────
   const handleSaveDraft = async () => {
     if (!country) return;
     setIsSavingDraft(true);
-    await onComplete({
-      country,
-      business_name:
-        country === "uk"
-          ? ukData.proposed_company_name || "Draft Registration"
-          : ngData.proposed_name_1 || "Draft Registration",
-      structure:
-        country === "uk"
-          ? UK_STRUCTURES.find((s) => s.value === ukData.business_structure)?.label || ""
-          : NG_TYPES.find((t) => t.value === ngData.business_type)?.label || "",
-      status: "draft",
-      initiated_at: editRegistration?.initiated_at || new Date().toISOString().split("T")[0],
-      last_updated: new Date().toISOString().split("T")[0],
-      current_step: step + 1,
-      total_steps: 4,
-      uk_data: country === "uk" ? ukData : undefined,
-      nigeria_data: country === "nigeria" ? ngData : undefined,
-    });
-    setIsSavingDraft(false);
-    setDraftSaved(true);
-    setTimeout(() => setDraftSaved(false), 3000);
+    setApiError(null);
+    try {
+      const jurisdiction = country === "uk" ? 1 : 2;
+      const id = await getOrCreateId(jurisdiction);
+      if (!id) return;
+
+      if (country === "uk") {
+        await updateUK({ id, body: buildUKPayload(step + 1) }).unwrap();
+      } else {
+        await updateNG({ id, body: buildNGPayload(step + 1) }).unwrap();
+      }
+      await saveDraftRegistration(id).unwrap();
+
+      setDraftSaved(true);
+      setTimeout(() => setDraftSaved(false), 3000);
+    } catch {
+      setApiError("Failed to save draft. Please try again.");
+    } finally {
+      setIsSavingDraft(false);
+    }
   };
 
+  // ── Submit ─────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
+    if (!country) return;
     setIsSubmitting(true);
-    await onComplete({
-      country: country!,
-      business_name:
-        country === "uk"
-          ? ukData.proposed_company_name || ""
-          : ngData.proposed_name_1 || "",
-      structure:
-        country === "uk"
-          ? UK_STRUCTURES.find((s) => s.value === ukData.business_structure)?.label || ""
-          : NG_TYPES.find((t) => t.value === ngData.business_type)?.label || "",
-      status: "pending_review",
-      initiated_at: new Date().toISOString().split("T")[0],
-      last_updated: new Date().toISOString().split("T")[0],
-      current_step: 4,
-      total_steps: 4,
-      uk_data: country === "uk" ? ukData : undefined,
-      nigeria_data: country === "nigeria" ? ngData : undefined,
-    });
-    setIsSubmitting(false);
-    handleClose();
+    setApiError(null);
+    try {
+      const jurisdiction = country === "uk" ? 1 : 2;
+      const id = await getOrCreateId(jurisdiction);
+      if (!id) return;
+
+      if (country === "uk") {
+        await updateUK({ id, body: buildUKPayload(4) }).unwrap();
+      } else {
+        await updateNG({ id, body: buildNGPayload(4) }).unwrap();
+      }
+      await submitRegistration(id).unwrap();
+
+      onComplete();
+      handleClose();
+    } catch {
+      setApiError("Submission failed. Please check your details and try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const sheetTitle = !country
@@ -1185,6 +1274,14 @@ export function NewRegistrationSheet({
       width={520}
       footer={country ? (
         <div className="flex flex-col gap-2">
+          {apiError && (
+            <div
+              className="flex items-center gap-2 px-3 py-2 rounded-xl border"
+              style={{ backgroundColor: "rgba(239,68,68,0.08)", borderColor: "rgba(239,68,68,0.25)" }}
+            >
+              <span className="text-xs font-medium text-red-400">{apiError}</span>
+            </div>
+          )}
           {draftSaved && (
             <div
               className="flex items-center gap-2 px-3 py-2 rounded-xl border"
@@ -1197,7 +1294,7 @@ export function NewRegistrationSheet({
           <button
             type="button"
             onClick={handleSaveDraft}
-            disabled={isSavingDraft}
+            disabled={isSavingDraft || isSubmitting}
             className="w-full flex items-center justify-center gap-2 h-10 rounded-xl text-sm font-semibold border transition-all duration-200 disabled:opacity-50"
             style={{ borderColor: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.65)", backgroundColor: "transparent" }}
             onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.06)"; }}

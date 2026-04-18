@@ -7,9 +7,16 @@ import {
   Upload, ShieldCheck, FileText, Plus, Trash2, Link2, X,
 } from "lucide-react";
 import {
-  useSubmitKybMutation,
+  useSubmitKybMultiEntryMutation,
   useFixLegalNameMutation,
   useUploadComplianceDocumentMutation,
+  useResolveAlertMutation,
+  useResolveAllAlertsMutation,
+  useConnectBankMutation,
+  useConnectTaxMutation,
+  ComplianceCentreAlert,
+  AmlReport,
+  OperatingHistoryResponse,
 } from "@/lib/api/complianceCentreApi";
 import { useToast } from "@/components/shared/toast";
 
@@ -818,9 +825,26 @@ function TaxAuthorityToggle({
 
 function HMRCConnectForm({ onSubmit }: { onSubmit: () => void }) {
   const [authority, setAuthority] = useState<"HMRC" | "FIRS">("HMRC");
-  const [authCode, setAuthCode] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [connectTax] = useConnectTaxMutation();
+  const { toast } = useToast();
 
   const isHMRC = authority === "HMRC";
+
+  const handleConnect = async () => {
+    setLoading(true);
+    try {
+      await connectTax({
+        provider: authority,
+        jurisdiction: authority === "HMRC" ? "GB" : "NG",
+      }).unwrap();
+      onSubmit();
+    } catch (error) {
+      toast({ title: "Failed to connect tax data. Please try again.", variant: "error" });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-5">
@@ -843,29 +867,17 @@ function HMRCConnectForm({ onSubmit }: { onSubmit: () => void }) {
         <strong>Next step:</strong> You&apos;ll be redirected to {isHMRC ? "HMRC" : "FIRS"} to authorise access. Once authorised, return here to complete the connection.
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <FieldLabel>Authorization Code (optional)</FieldLabel>
-        <input
-          type="text"
-          placeholder="Paste your auth code if you have one"
-          value={authCode}
-          onChange={(e) => setAuthCode(e.target.value)}
-          className={inputBase}
-          style={inputStyle}
-          onFocus={onFocusIn}
-          onBlur={onFocusOut}
-        />
-      </div>
-
       <button
         type="button"
-        onClick={onSubmit}
-        className="w-full h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200"
+        onClick={handleConnect}
+        disabled={loading}
+        className="w-full h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200 disabled:opacity-60"
         style={{ backgroundColor: BRAND.gold, color: BRAND.primary }}
         onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.88"; }}
         onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
       >
-        <Check size={15} />Connect to {isHMRC ? "HMRC" : "FIRS"}
+        {loading ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
+        {loading ? "Connecting..." : `Connect to ${isHMRC ? "HMRC" : "FIRS"}`}
       </button>
     </div>
   );
@@ -875,6 +887,24 @@ function HMRCConnectForm({ onSubmit }: { onSubmit: () => void }) {
 
 function HMRCSyncForm({ onSubmit }: { onSubmit: () => void }) {
   const [authority, setAuthority] = useState<"HMRC" | "FIRS">("HMRC");
+  const [loading, setLoading] = useState(false);
+  const [connectTax] = useConnectTaxMutation();
+  const { toast } = useToast();
+
+  const handleSync = async () => {
+    setLoading(true);
+    try {
+      await connectTax({
+        provider: authority,
+        jurisdiction: authority === "HMRC" ? "GB" : "NG",
+      }).unwrap();
+      onSubmit();
+    } catch (error) {
+      toast({ title: "Failed to sync tax data. Please try again.", variant: "error" });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-5">
@@ -892,13 +922,15 @@ function HMRCSyncForm({ onSubmit }: { onSubmit: () => void }) {
 
       <button
         type="button"
-        onClick={onSubmit}
-        className="w-full h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200"
+        onClick={handleSync}
+        disabled={loading}
+        className="w-full h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200 disabled:opacity-60"
         style={{ backgroundColor: BRAND.gold, color: BRAND.primary }}
         onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.88"; }}
         onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
       >
-        <RefreshCw size={15} />Sync from {authority === "HMRC" ? "HMRC" : "FIRS"}
+        {loading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+        {loading ? "Syncing..." : `Sync from ${authority === "HMRC" ? "HMRC" : "FIRS"}`}
       </button>
     </div>
   );
@@ -908,18 +940,26 @@ function HMRCSyncForm({ onSubmit }: { onSubmit: () => void }) {
 
 function BankConnectForm({ onSubmit }: { onSubmit: () => void }) {
   const [tab, setTab] = useState<"bank" | "statement">("bank");
-  const [authCode, setAuthCode] = useState("");
-  const [bankError, setBankError] = useState("");
+  const [selectedProvider, setSelectedProvider] = useState<"TrueLayer" | "Mono">("TrueLayer");
   const [statementFile, setStatementFile] = useState<File | null>(null);
   const [statementError, setStatementError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [connectBank] = useConnectBankMutation();
+  const { toast } = useToast();
 
-  const handleBankSubmit = () => {
-    if (!authCode.trim()) {
-      setBankError("Authorization is required to proceed");
-      return;
+  const handleBankConnect = async () => {
+    setLoading(true);
+    try {
+      await connectBank({
+        provider: selectedProvider,
+        jurisdiction: selectedProvider === "TrueLayer" ? "GB" : "NG",
+      }).unwrap();
+      onSubmit();
+    } catch (error) {
+      toast({ title: "Failed to connect bank account. Please try again.", variant: "error" });
+    } finally {
+      setLoading(false);
     }
-    setBankError("");
-    onSubmit();
   };
 
   const handleStatementSubmit = () => {
@@ -930,6 +970,11 @@ function BankConnectForm({ onSubmit }: { onSubmit: () => void }) {
     setStatementError("");
     onSubmit();
   };
+
+  const providers = [
+    { id: "TrueLayer" as const, name: "TrueLayer", desc: "🇬🇧 UK banks — Barclays, HSBC, Monzo, Lloyds +60 more", flag: "🇬🇧", color: BRAND.accent },
+    { id: "Mono" as const, name: "Mono", desc: "🇳🇬 Nigerian banks — GTBank, Access, Zenith +30 more", flag: "🇳🇬", color: BRAND.green },
+  ];
 
   return (
     <div className="flex flex-col gap-5">
@@ -944,7 +989,6 @@ function BankConnectForm({ onSubmit }: { onSubmit: () => void }) {
             type="button"
             onClick={() => {
               setTab(t.value);
-              setBankError("");
               setStatementError("");
             }}
             className="px-4 py-3 text-sm font-medium border-b-2 transition-all duration-200"
@@ -975,27 +1019,38 @@ function BankConnectForm({ onSubmit }: { onSubmit: () => void }) {
             <strong>Next step:</strong> Click the button below to authorize access to your bank account. You'll be redirected to your bank's secure login.
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <FieldLabel required>Authorization Status</FieldLabel>
-            <div
-              className="h-11 px-4 flex items-center rounded-xl border text-sm"
-              style={{ backgroundColor: "rgba(255,255,255,0.03)", borderColor: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.5)" }}
-            >
-              {authCode ? "✓ Authorized" : "Waiting for authorization..."}
+          <div className="flex flex-col gap-2">
+            <FieldLabel required>Select Bank Provider</FieldLabel>
+            <div className="grid grid-cols-2 gap-2">
+              {providers.map((provider) => (
+                <button
+                  key={provider.id}
+                  type="button"
+                  onClick={() => setSelectedProvider(provider.id)}
+                  className="rounded-xl border p-4 flex flex-col gap-2 transition-all duration-200 text-left"
+                  style={{
+                    backgroundColor: selectedProvider === provider.id ? `${provider.color}12` : "rgba(255,255,255,0.04)",
+                    borderColor: selectedProvider === provider.id ? `${provider.color}50` : "rgba(255,255,255,0.08)",
+                  }}
+                >
+                  <span className="text-lg font-bold text-white">{provider.name}</span>
+                  <span className="text-xs" style={{ color: "rgba(255,255,255,0.6)" }}>{provider.desc}</span>
+                </button>
+              ))}
             </div>
           </div>
 
-          {bankError && <span className="text-xs text-red-400">{bankError}</span>}
-
           <button
             type="button"
-            onClick={() => { setAuthCode("authorized"); handleBankSubmit(); }}
-            className="w-full h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200"
+            onClick={handleBankConnect}
+            disabled={loading}
+            className="w-full h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200 disabled:opacity-60"
             style={{ backgroundColor: BRAND.accent, color: "white" }}
             onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.88"; }}
             onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
           >
-            <Link2 size={15} />Connect Bank Account
+            {loading ? <Loader2 size={15} className="animate-spin" /> : <Link2 size={15} />}
+            {loading ? "Connecting..." : "Connect Bank Account"}
           </button>
         </div>
       )}
@@ -1352,7 +1407,9 @@ function DocumentsCheckForm({ onSubmit }: { onSubmit: () => void }) {
 
 // ─── Activity Check Form ──────────────────────────────────────────────────────
 
-function ActivityCheckForm({ onSubmit }: { onSubmit: () => void }) {
+function ActivityCheckForm({ onSubmit, historyData }: { onSubmit: () => void; historyData?: OperatingHistoryResponse }) {
+  const hasHistory = (historyData?.history?.length ?? 0) > 0;
+
   return (
     <div className="flex flex-col gap-5">
       <div
@@ -1362,25 +1419,43 @@ function ActivityCheckForm({ onSubmit }: { onSubmit: () => void }) {
         ✓ Your platform activity and engagement metrics are displayed below.
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        {[
-          { label: "Last Active", value: "2 days ago" },
-          { label: "This Month", value: "12 logins" },
-          { label: "Compliance Updates", value: "3 items" },
-          { label: "Documents Uploaded", value: "8 files" },
-        ].map((metric, i) => (
-          <div
-            key={i}
-            className="rounded-lg border p-3"
-            style={{ backgroundColor: "rgba(255,255,255,0.03)", borderColor: "rgba(255,255,255,0.08)" }}
-          >
-            <div className="text-[11px] font-semibold uppercase" style={{ color: BRAND.muted }}>
-              {metric.label}
+      {hasHistory ? (
+        <div className="flex flex-col gap-3">
+          <FieldLabel>Recent Platform Activity</FieldLabel>
+          {(historyData?.history ?? []).slice(0, 3).map((item, idx) => (
+            <div
+              key={idx}
+              className="rounded-xl border p-4 flex items-start gap-3"
+              style={{ backgroundColor: "rgba(255,255,255,0.03)", borderColor: "rgba(255,255,255,0.08)" }}
+            >
+              <div className="flex-shrink-0 mt-1">
+                {item.isPenalty ? (
+                  <AlertCircle size={18} style={{ color: "#ef4444" }} />
+                ) : (
+                  <Check size={18} style={{ color: BRAND.green }} />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-white">{item.title}</div>
+                <div className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.5)" }}>
+                  {new Date(item.occurredAt).toLocaleDateString("en-GB", {
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric",
+                  })}
+                </div>
+              </div>
             </div>
-            <div className="text-lg font-bold text-white mt-1">{metric.value}</div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div
+          className="rounded-xl border p-4 text-xs leading-relaxed text-center"
+          style={{ backgroundColor: `${BRAND.accent}08`, borderColor: `${BRAND.accent}20`, color: "rgba(255,255,255,0.55)" }}
+        >
+          ℹ️ No platform activity recorded yet. Activity will appear here once you start using the platform.
+        </div>
+      )}
 
       <button
         type="button"
@@ -1590,21 +1665,69 @@ function CategoriseForm({ onSubmit }: { onSubmit: () => void }) {
 
 // ─── Alerts Form ──────────────────────────────────────────────────────────────
 
-function AlertsForm({ onSubmit }: { onSubmit: () => void }) {
-  const [resolved, setResolved] = useState<Record<string, boolean>>(
-    Object.fromEntries(MOCK_ALERTS.map((a) => [a.id, false]))
-  );
+function AlertsForm({ alerts, onSubmit }: { alerts?: ComplianceCentreAlert[]; onSubmit: () => void }) {
+  const displayAlerts = alerts && alerts.length > 0 ? alerts : MOCK_ALERTS.map((a) => ({
+    id: Number(a.id.replace("al", "")),
+    title: a.title,
+    description: a.detail,
+    priority: "High",
+    status: "Open",
+    createdAt: new Date().toISOString(),
+  }));
 
-  const allResolved = Object.values(resolved).every(Boolean);
+  const [resolveAlert] = useResolveAlertMutation();
+  const [resolveAll] = useResolveAllAlertsMutation();
+  const [resolvedIds, setResolvedIds] = useState<Set<number>>(new Set());
+  const { toast } = useToast();
+
+  const openAlerts = displayAlerts.filter((a) => a.status === "Open" && !resolvedIds.has(a.id));
+  const allResolved = openAlerts.length === 0;
+
+  const handleResolve = async (id: number) => {
+    try {
+      if (alerts && alerts.length > 0) {
+        await resolveAlert(id).unwrap();
+      }
+      setResolvedIds((prev) => new Set(prev).add(id));
+    } catch {
+      toast({ title: "Failed to resolve alert. Please try again.", variant: "error" });
+    }
+  };
+
+  const handleResolveAll = async () => {
+    try {
+      if (alerts && alerts.length > 0) {
+        await resolveAll().unwrap();
+      }
+      setResolvedIds(new Set(displayAlerts.map((a) => a.id)));
+    } catch {
+      toast({ title: "Failed to resolve all alerts. Please try again.", variant: "error" });
+    }
+  };
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>
-        Resolve all open alerts to improve your operating behaviour score.
-      </p>
+      <div className="flex items-center justify-between">
+        <p className="text-xs" style={{ color: "rgba(255,255,255,0.4)" }}>
+          Resolve all open alerts to improve your operating behaviour score.
+        </p>
+        {displayAlerts.length > 1 && !allResolved && (
+          <button
+            type="button"
+            onClick={handleResolveAll}
+            className="text-xs font-semibold px-3 h-8 rounded-lg border flex-shrink-0 transition-all duration-200"
+            style={{ backgroundColor: `${BRAND.accent}10`, borderColor: `${BRAND.accent}25`, color: BRAND.accent }}
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${BRAND.accent}20`; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = `${BRAND.accent}10`; }}
+          >
+            Resolve All
+          </button>
+        )}
+      </div>
 
-      {MOCK_ALERTS.map((alert) => {
-        const isResolved = resolved[alert.id];
+      {displayAlerts.map((alert) => {
+        const isResolved = resolvedIds.has(alert.id) || alert.status === "Resolved";
+        const daysOpen = Math.floor((Date.now() - new Date(alert.createdAt).getTime()) / 86400000);
         return (
           <div
             key={alert.id}
@@ -1626,15 +1749,17 @@ function AlertsForm({ onSubmit }: { onSubmit: () => void }) {
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-sm font-bold text-white">{alert.title}</span>
-                  <span
-                    className="text-[10px] px-2 py-0.5 rounded-full"
-                    style={{ backgroundColor: "rgba(239,68,68,0.12)", color: "#f87171" }}
-                  >
-                    Open {alert.daysOpen}d
-                  </span>
+                  {!isResolved && (
+                    <span
+                      className="text-[10px] px-2 py-0.5 rounded-full"
+                      style={{ backgroundColor: "rgba(239,68,68,0.12)", color: "#f87171" }}
+                    >
+                      Open {daysOpen}d
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>
-                  {alert.detail}
+                  {alert.description}
                 </p>
               </div>
             </div>
@@ -1642,21 +1767,13 @@ function AlertsForm({ onSubmit }: { onSubmit: () => void }) {
             {isResolved ? (
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold" style={{ color: BRAND.green }}>
-                  ✓ Marked as resolved
+                  ✓ Resolved
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setResolved((p) => ({ ...p, [alert.id]: false }))}
-                  className="text-[11px] underline"
-                  style={{ color: "rgba(255,255,255,0.3)" }}
-                >
-                  Undo
-                </button>
               </div>
             ) : (
               <button
                 type="button"
-                onClick={() => setResolved((p) => ({ ...p, [alert.id]: true }))}
+                onClick={() => handleResolve(alert.id)}
                 className="w-full h-9 rounded-lg text-xs font-bold flex items-center justify-center gap-2 border transition-all duration-200"
                 style={{ backgroundColor: `${BRAND.gold}12`, borderColor: `${BRAND.gold}30`, color: BRAND.gold }}
                 onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${BRAND.gold}20`; }}
@@ -1676,11 +1793,11 @@ function AlertsForm({ onSubmit }: { onSubmit: () => void }) {
         className="w-full h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
         style={{ backgroundColor: BRAND.gold, color: BRAND.primary }}
       >
-        <Check size={15} />Submit — All Alerts Resolved
+        <Check size={15} />Done — All Alerts Resolved
       </button>
       {!allResolved && (
         <p className="text-[11px] text-center" style={{ color: "rgba(255,255,255,0.3)" }}>
-          Resolve all {MOCK_ALERTS.length} alerts to continue
+          {openAlerts.length} open alert{openAlerts.length !== 1 ? "s" : ""} remaining
         </p>
       )}
     </div>
@@ -1689,41 +1806,66 @@ function AlertsForm({ onSubmit }: { onSubmit: () => void }) {
 
 // ─── AML Report View ──────────────────────────────────────────────────────────
 
-function AMLReportView({ onClose }: { onClose: () => void }) {
+function AMLReportView({ onClose, amlData, onReview }: { onClose: () => void; amlData?: AmlReport; onReview?: () => void }) {
   const checks = [
     {
       label: "Sanctions Screening",
-      result: "Clear",
-      detail: "No matches found across OFAC, UN, EU, and UK sanctions lists.",
+      result: amlData?.sanctionsScreeningStatus ?? "Clear",
+      passing: (amlData?.sanctionsScreeningStatus ?? "Clear") === "Clear",
+      detail: amlData?.sanctionsScreeningStatus === "Clear"
+        ? "No matches found across OFAC, UN, EU, and UK sanctions lists."
+        : "Sanctions screening is pending or flagged. Contact support for details.",
     },
     {
       label: "PEP Check",
-      result: "No Flags",
-      detail: "Not identified as a Politically Exposed Person or close associate.",
+      result: amlData ? (amlData.hasPepFlags ? "Flagged" : "No Flags") : "No Flags",
+      passing: amlData ? !amlData.hasPepFlags : true,
+      detail: amlData && !amlData.hasPepFlags
+        ? "Not identified as a Politically Exposed Person or close associate."
+        : "PEP flags detected. Review required.",
     },
     {
       label: "Adverse Media",
-      result: "Clear",
-      detail: "No relevant adverse media results from global news database scan.",
+      result: amlData?.adverseMediaStatus ?? "Clear",
+      passing: (amlData?.adverseMediaStatus ?? "Clear") === "Clear",
+      detail: amlData?.adverseMediaStatus === "Clear"
+        ? "No relevant adverse media results from global news database scan."
+        : "Adverse media check is pending or flagged.",
     },
     {
       label: "Ongoing Monitoring",
-      result: "Active",
-      detail: "Automated re-screening every 30 days via Sumsub monitoring.",
+      result: amlData?.ongoingMonitoringActive ? "Active" : "Inactive",
+      passing: amlData?.ongoingMonitoringActive ?? true,
+      detail: amlData?.ongoingMonitoringActive
+        ? `Automated re-screening every ${amlData.monitoringIntervalDays} days via Sumsub monitoring.`
+        : "Ongoing monitoring is not yet active.",
     },
   ];
+
+  const lastScan = amlData?.lastScannedAt
+    ? new Date(amlData.lastScannedAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+    : "Pending";
+  const nextScan = amlData?.nextScanAt
+    ? new Date(amlData.nextScanAt).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+    : "N/A";
+  const allClear = checks.every((c) => c.passing);
 
   return (
     <div className="flex flex-col gap-5">
       <div
         className="rounded-xl border p-4 flex items-start gap-3"
-        style={{ backgroundColor: `${BRAND.green}08`, borderColor: `${BRAND.green}20` }}
+        style={{
+          backgroundColor: allClear ? `${BRAND.green}08` : "rgba(239,68,68,0.06)",
+          borderColor: allClear ? `${BRAND.green}20` : "rgba(239,68,68,0.25)",
+        }}
       >
-        <ShieldCheck size={20} style={{ color: BRAND.green, flexShrink: 0, marginTop: 1 }} />
+        <ShieldCheck size={20} style={{ color: allClear ? BRAND.green : "#ef4444", flexShrink: 0, marginTop: 1 }} />
         <div>
-          <div className="text-sm font-bold text-white mb-1">AML Screening — All Clear</div>
+          <div className="text-sm font-bold text-white mb-1">
+            AML Screening — {allClear ? "All Clear" : "Review Required"}
+          </div>
           <div className="text-xs" style={{ color: "rgba(255,255,255,0.5)" }}>
-            Last full scan: 01 Apr 2026 · Provider: Sumsub · Next scan: 01 May 2026
+            Last full scan: {lastScan} · Provider: Sumsub · Next scan: {nextScan}
           </div>
         </div>
       </div>
@@ -1737,16 +1879,21 @@ function AMLReportView({ onClose }: { onClose: () => void }) {
           >
             <div
               className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-              style={{ backgroundColor: `${BRAND.green}15` }}
+              style={{ backgroundColor: c.passing ? `${BRAND.green}15` : "rgba(239,68,68,0.12)" }}
             >
-              <CheckCircle2 size={16} style={{ color: BRAND.green }} />
+              {c.passing
+                ? <CheckCircle2 size={16} style={{ color: BRAND.green }} />
+                : <AlertCircle size={16} style={{ color: "#ef4444" }} />}
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold text-white">{c.label}</span>
                 <span
                   className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                  style={{ backgroundColor: `${BRAND.green}15`, color: BRAND.green }}
+                  style={{
+                    backgroundColor: c.passing ? `${BRAND.green}15` : "rgba(239,68,68,0.12)",
+                    color: c.passing ? BRAND.green : "#f87171",
+                  }}
                 >
                   {c.result}
                 </span>
@@ -1759,7 +1906,7 @@ function AMLReportView({ onClose }: { onClose: () => void }) {
 
       <button
         type="button"
-        onClick={onClose}
+        onClick={() => { onReview?.(); onClose(); }}
         className="w-full h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
         style={{ backgroundColor: `${BRAND.green}15`, color: BRAND.green, border: `1px solid ${BRAND.green}30` }}
       >
@@ -1775,13 +1922,24 @@ function RecordUpdatesForm({ onSubmit }: { onSubmit: () => void }) {
   const [syncing, setSyncing] = useState<string | null>(null);
   const [synced, setSynced] = useState<string[]>([]);
   const [manualFile, setManualFile] = useState("");
+  const [connectBank] = useConnectBankMutation();
+  const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const handleSync = async (id: string) => {
+  const handleSync = async (id: "truelayer" | "mono") => {
     setSyncing(id);
-    await new Promise((res) => setTimeout(res, 2000));
-    setSynced((p) => [...p, id]);
-    setSyncing(null);
+    try {
+      await connectBank({
+        provider: id === "truelayer" ? "TrueLayer" : "Mono",
+        jurisdiction: id === "truelayer" ? "GB" : "NG",
+      }).unwrap();
+      setSynced((p) => [...p, id]);
+      toast({ title: "Bank synced successfully", variant: "success" });
+    } catch (error) {
+      toast({ title: "Sync failed. Please try again.", variant: "error" });
+    } finally {
+      setSyncing(null);
+    }
   };
 
   const canSubmit = synced.length > 0 || manualFile !== "";
@@ -1837,7 +1995,7 @@ function RecordUpdatesForm({ onSubmit }: { onSubmit: () => void }) {
               </div>
               <button
                 type="button"
-                onClick={() => !isConnected && handleSync(p.id)}
+                onClick={() => !isConnected && handleSync(p.id as "truelayer" | "mono")}
                 disabled={isConnecting || isConnected}
                 className="flex items-center gap-1.5 px-4 h-9 rounded-lg text-xs font-bold flex-shrink-0 transition-all disabled:opacity-60"
                 style={{ backgroundColor: isConnected ? `${p.color}15` : p.color, color: isConnected ? p.color : "#fff" }}
@@ -2022,13 +2180,16 @@ interface FixActionSheetProps {
   isOpen: boolean;
   onClose: () => void;
   fixType: FixType;
+  alerts?: ComplianceCentreAlert[];
+  amlData?: AmlReport;
+  historyData?: OperatingHistoryResponse;
 }
 
-export function FixActionSheet({ isOpen, onClose, fixType }: FixActionSheetProps) {
+export function FixActionSheet({ isOpen, onClose, fixType, alerts, amlData, historyData }: FixActionSheetProps) {
   const [step, setStep] = useState<"form" | "processing" | "done">("form");
   const [openKey, setOpenKey] = useState(0);
 
-  const [submitKyb] = useSubmitKybMutation();
+  const [submitKybMultiEntry] = useSubmitKybMultiEntryMutation();
   const [fixLegalName] = useFixLegalNameMutation();
   const { toast } = useToast();
 
@@ -2054,7 +2215,13 @@ export function FixActionSheet({ isOpen, onClose, fixType }: FixActionSheetProps
   const handleKYBSubmit = async (data: KYBFormData) => {
     setStep("processing");
     try {
-      await submitKyb(data).unwrap();
+      await submitKybMultiEntry({
+        jurisdiction: data.jurisdiction,
+        companiesHouseNumber: data.companiesHouseNumber,
+        submittedLegalName: data.submittedLegalName,
+        authorizedDirectorsJson: data.directorsJson,
+        certificateOfIncorporationUrl: data.certificateOfIncorporationUrl,
+      }).unwrap();
       setStep("done");
     } catch {
       setStep("form");
@@ -2065,7 +2232,7 @@ export function FixActionSheet({ isOpen, onClose, fixType }: FixActionSheetProps
   const handleNameMatchSubmit = async (correctedName: string) => {
     setStep("processing");
     try {
-      await fixLegalName({ correctedName }).unwrap();
+      await fixLegalName({ correctedBusinessName: correctedName }).unwrap();
       setStep("done");
     } catch {
       setStep("form");
@@ -2079,7 +2246,7 @@ export function FixActionSheet({ isOpen, onClose, fixType }: FixActionSheetProps
   if (fixType === "alerts_review") {
     return (
       <SystemSheet open={isOpen} onClose={handleClose} title={meta.title} description={meta.description} width={520}>
-        <AMLReportView onClose={handleClose} />
+        <AMLReportView onClose={handleClose} amlData={amlData} />
       </SystemSheet>
     );
   }
@@ -2114,10 +2281,10 @@ export function FixActionSheet({ isOpen, onClose, fixType }: FixActionSheetProps
           {fixType === "receipts" && <ReceiptsForm onSubmit={handleSubmit} />}
           {fixType === "documents_upload" && <DocumentsUploadForm onSubmit={handleSubmit} />}
           {fixType === "documents_check" && <DocumentsCheckForm onSubmit={handleSubmit} />}
-          {fixType === "activity_check" && <ActivityCheckForm onSubmit={handleSubmit} />}
+          {fixType === "activity_check" && <ActivityCheckForm historyData={historyData} onSubmit={handleSubmit} />}
           {fixType === "reconcile" && <ReconcileForm onSubmit={handleSubmit} />}
           {fixType === "categorise" && <CategoriseForm onSubmit={handleSubmit} />}
-          {fixType === "alerts" && <AlertsForm onSubmit={handleSubmit} />}
+          {fixType === "alerts" && <AlertsForm alerts={alerts} onSubmit={handleSubmit} />}
           {fixType === "record_updates" && <RecordUpdatesForm onSubmit={handleSubmit} />}
         </div>
       )}

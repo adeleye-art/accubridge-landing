@@ -12,7 +12,7 @@ import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useToast } from "@/components/shared/toast";
 import { useGetComplianceCasesQuery, useUpdateComplianceCaseMutation, type ApiComplianceCase } from "@/lib/api/complianceApi";
 import { useGetInternalNotesQuery, useCreateInternalNoteMutation, useDeleteInternalNoteMutation } from "@/lib/api/internalNoteApi";
-import { useCreateDocumentRequestMutation } from "@/lib/api/documentRequestApi";
+import { useCreateDocumentRequestMutation, useGetDocumentRequestsQuery } from "@/lib/api/documentRequestApi";
 
 const BRAND = { gold: "#D4AF37", accent: "#3E92CC", muted: "#6B7280", primary: "#0A2463", green: "#06D6A0", red: "#ef4444", amber: "#f59e0b" };
 
@@ -128,6 +128,10 @@ function CaseSheet({ open, caseItem, onClose }: {
   const [dueDate, setDueDate]     = useState("");
   const [docMessage, setDocMessage] = useState("");
   const [createDocRequest, { isLoading: sendingDocRequest }] = useCreateDocumentRequestMutation();
+  const { data: docRequestsData, isLoading: docRequestsLoading } = useGetDocumentRequestsQuery(
+    { clientId: caseItem?.clientId },
+    { skip: !caseItem || activeTab !== "documents" },
+  );
 
   if (!caseItem) return null;
 
@@ -429,6 +433,53 @@ function CaseSheet({ open, caseItem, onClose }: {
             <FileText size={14} />
             {sendingDocRequest ? "Sending Request…" : "Send Document Request"}
           </button>
+
+          {/* Previously sent requests */}
+          <div className="pt-2" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+            <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: BRAND.muted }}>
+              Previously Sent Requests
+            </div>
+            {docRequestsLoading && <Skeleton className="h-14 w-full" />}
+            {!docRequestsLoading && (docRequestsData?.requests ?? []).length === 0 && (
+              <div className="text-xs text-center py-4" style={{ color: BRAND.muted }}>
+                No document requests sent yet.
+              </div>
+            )}
+            {(docRequestsData?.requests ?? []).map((req) => {
+              const docLabel = DOC_TYPES.find((d) => String(d.value) === req.documentType || d.label === req.documentType)?.label ?? req.documentType;
+              const statusMap: Record<string, { color: string; bg: string; label: string }> = {
+                Pending:   { color: BRAND.amber,  bg: "rgba(245,158,11,0.12)",  label: "Pending"   },
+                Submitted: { color: BRAND.accent, bg: "rgba(62,146,204,0.12)",  label: "Submitted" },
+                Overdue:   { color: BRAND.red,    bg: "rgba(239,68,68,0.12)",   label: "Overdue"   },
+                Approved:  { color: BRAND.green,  bg: "rgba(6,214,160,0.12)",   label: "Approved"  },
+                Rejected:  { color: "#9ca3af",    bg: "rgba(156,163,175,0.1)",  label: "Rejected"  },
+              };
+              const st = statusMap[req.status] ?? { color: BRAND.muted, bg: "rgba(255,255,255,0.06)", label: req.status };
+              return (
+                <div
+                  key={req.id}
+                  className="flex items-start justify-between gap-3 rounded-xl p-3 mb-2 border"
+                  style={{ backgroundColor: "rgba(255,255,255,0.03)", borderColor: "rgba(255,255,255,0.07)" }}
+                >
+                  <div className="flex flex-col gap-1 min-w-0">
+                    <div className="text-sm font-medium text-white truncate">{docLabel}</div>
+                    <div className="text-xs" style={{ color: BRAND.muted }}>
+                      Due {req.dueDateFormatted}
+                      {req.isOverdue && (
+                        <span className="ml-1.5" style={{ color: BRAND.red }}>· Overdue</span>
+                      )}
+                    </div>
+                  </div>
+                  <span
+                    className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0"
+                    style={{ color: st.color, backgroundColor: st.bg }}
+                  >
+                    {st.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -448,15 +499,19 @@ function CaseSheet({ open, caseItem, onClose }: {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function AdminCompliancePage() {
-  const [search, setSearch]           = useState("");
-  const [activeFilter, setActiveFilter] = useState<ReviewReason | "all">("all");
-  const [page, setPage]               = useState(1);
-  const [caseSheet, setCaseSheet]     = useState<ApiComplianceCase | null>(null);
+  const [search,        setSearch]        = useState("");
+  const [activeFilter,  setActiveFilter]  = useState<ReviewReason | "all">("all");
+  const [urgencyFilter, setUrgencyFilter] = useState<number | undefined>(undefined);
+  const [statusFilter,  setStatusFilter]  = useState<number | undefined>(undefined);
+  const [page,          setPage]          = useState(1);
+  const [caseSheet,     setCaseSheet]     = useState<ApiComplianceCase | null>(null);
 
   const PAGE_SIZE = 20;
 
   const { data, isLoading } = useGetComplianceCasesQuery({
     reason:   activeFilter !== "all" ? REASON_TO_API[activeFilter] : undefined,
+    urgency:  urgencyFilter,
+    status:   statusFilter,
     page,
     pageSize: PAGE_SIZE,
   });
@@ -502,13 +557,40 @@ export default function AdminCompliancePage() {
         </div>
 
         {/* Filter + Search */}
-        <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl border max-w-xs flex-shrink-0" style={{ backgroundColor: "rgba(255,255,255,0.05)", borderColor: "rgba(255,255,255,0.1)" }}>
-            <Search size={14} style={{ color: BRAND.muted }} />
-            <input type="text" placeholder="Search business or reviewer…" value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-              className="bg-transparent outline-none text-sm text-white placeholder-[#6B7280] w-48" />
+        <div className="flex flex-col gap-3">
+          {/* Search + Urgency/Status selects */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl border flex-1 min-w-[200px]" style={{ backgroundColor: "rgba(255,255,255,0.05)", borderColor: "rgba(255,255,255,0.1)" }}>
+              <Search size={14} style={{ color: BRAND.muted }} />
+              <input type="text" placeholder="Search business or reviewer…" value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                className="bg-transparent outline-none text-sm text-white placeholder-[#6B7280] w-full" />
+            </div>
+            <select
+              value={urgencyFilter ?? ""}
+              onChange={(e) => { setUrgencyFilter(e.target.value === "" ? undefined : Number(e.target.value)); setPage(1); }}
+              className="h-9 px-3 rounded-xl text-sm outline-none border appearance-none cursor-pointer"
+              style={{ backgroundColor: "rgba(255,255,255,0.05)", borderColor: "rgba(255,255,255,0.1)", color: urgencyFilter !== undefined ? "white" : BRAND.muted, colorScheme: "dark" }}
+            >
+              <option value="">All Urgency</option>
+              <option value="0">Low</option>
+              <option value="1">Medium</option>
+              <option value="2">High</option>
+            </select>
+            <select
+              value={statusFilter ?? ""}
+              onChange={(e) => { setStatusFilter(e.target.value === "" ? undefined : Number(e.target.value)); setPage(1); }}
+              className="h-9 px-3 rounded-xl text-sm outline-none border appearance-none cursor-pointer"
+              style={{ backgroundColor: "rgba(255,255,255,0.05)", borderColor: "rgba(255,255,255,0.1)", color: statusFilter !== undefined ? "white" : BRAND.muted, colorScheme: "dark" }}
+            >
+              <option value="">All Status</option>
+              <option value="0">Pending</option>
+              <option value="1">Under Review</option>
+              <option value="2">Resolved</option>
+              <option value="3">Escalated</option>
+            </select>
           </div>
+          {/* Reason filter tabs */}
           <div className="flex flex-wrap gap-1.5">
             {FILTER_TABS.map((tab) => (
               <button key={tab.key} type="button"

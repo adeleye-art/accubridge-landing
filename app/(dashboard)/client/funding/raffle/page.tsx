@@ -1,15 +1,16 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { ChevronLeft, Ticket, CreditCard, Loader2, CheckCircle2 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { useToast } from "@/components/shared/toast";
-import { useInitializePaymentMutation } from "@/lib/api/paymentApi";
+import { RafflePaymentModal } from "../_components/raffle-payment-modal";
 import { useGetFundingApplicationsQuery } from "@/lib/api/fundingApi";
 
 const BRAND = { primary: "#0A2463", gold: "#D4AF37", green: "#06D6A0", accent: "#3E92CC", muted: "#6B7280" };
-const TICKET_PRICE = 25;
+const TICKET_PRICE_GBP = 25;
+const TICKET_PRICE_NGN = 15000;
 const MIN_TICKETS  = 5;
 
 function entryStatusLabel(status: string): { label: string; color: string; bg: string } {
@@ -29,36 +30,57 @@ function entryStatusLabel(status: string): { label: string; color: string; bg: s
 
 export default function RaffleFundingPage() {
   const [pendingTickets, setPendingTickets] = useState(0);
-  const [isEntering,     setIsEntering]     = useState(false);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [userEmail, setUserEmail] = useState("");
+  const [userId, setUserId] = useState<number | undefined>(undefined);
 
   const { toast } = useToast();
-  const [initializePayment] = useInitializePaymentMutation();
+
+  // Retrieve user credentials from localStorage
+  useEffect(() => {
+    const email = localStorage.getItem("auth_user_email") || "";
+    setUserEmail(email);
+    // Decode userId from JWT if needed
+    if (typeof window !== "undefined") {
+      const token = localStorage.getItem("auth_token");
+      if (token) {
+        try {
+          const parts = token.split(".");
+          if (parts.length === 3) {
+            const payload = JSON.parse(atob(parts[1]));
+            const id = payload.userId ?? payload.nameid ?? payload.sub;
+            if (id) setUserId(Number(id));
+          }
+        } catch {
+          // Silent fail - userId remains undefined
+        }
+      }
+    }
+  }, []);
 
   const { data: fundingData, isLoading: entriesLoading } = useGetFundingApplicationsQuery({ type: 3, pageSize: 50 });
   const entries   = fundingData?.applications ?? [];
   const activeEntry = entries.find((e) => e.status === "Submitted" || e.status === "UnderReview");
 
   const canConfirm = pendingTickets >= MIN_TICKETS;
-  const totalCost  = pendingTickets * TICKET_PRICE;
+  const totalCostGBP  = pendingTickets * TICKET_PRICE_GBP;
+  const totalCostNGN  = pendingTickets * TICKET_PRICE_NGN;
 
   const handleBuyTicket = () => setPendingTickets((c) => c + 1);
 
-  const handleConfirmEntry = async () => {
-    setIsEntering(true);
-    try {
-      const email = (typeof window !== "undefined" ? localStorage.getItem("auth_user_email") : null) ?? "";
-      const result = await initializePayment({
-        amount:      totalCost,
-        email,
-        currency:    "GBP",
-        paymentType: "raffle",
-        callbackUrl: `${window.location.origin}/payment/callback?type=raffle&tickets=${pendingTickets}`,
-      }).unwrap();
-      window.location.href = result.authorizationUrl;
-    } catch {
-      toast({ title: "Failed to initialise payment. Please try again.", variant: "error" });
-      setIsEntering(false);
-    }
+  const handleConfirmEntry = () => {
+    setPaymentModalOpen(true);
+  };
+
+  const handlePaymentSuccess = async (reference: string, jurisdiction: "GB" | "NG") => {
+    toast({
+      title: "Payment successful!",
+      description: `Your raffle entry has been confirmed. Reference: ${reference}`,
+      variant: "success",
+    });
+    // Reset the ticket counter
+    setPendingTickets(0);
+    // In a real scenario, you might want to refresh the entries list here
   };
 
   return (
@@ -101,8 +123,8 @@ export default function RaffleFundingPage() {
               </div>
               <div className="flex flex-col gap-4">
                 {[
-                  { step: "01", title: "Buy tickets",        desc: `Buy at least ${MIN_TICKETS} tickets at £${TICKET_PRICE} each to enter the draw.` },
-                  { step: "02", title: "Pay securely",       desc: "Complete your payment via our secure Paystack checkout." },
+                  { step: "01", title: "Buy tickets",        desc: `Buy at least ${MIN_TICKETS} tickets at £${TICKET_PRICE_GBP} each to enter the draw.` },
+                  { step: "02", title: "Pay securely",       desc: "Complete your payment via Stripe (UK) or Paystack (Nigeria)." },
                   { step: "03", title: "Entry confirmed",    desc: "Your entry is automatically submitted. Draws happen every quarter." },
                   { step: "04", title: "Win funding",        desc: "Winners are selected randomly. Prize amounts vary by quarter." },
                 ].map((item) => (
@@ -128,12 +150,13 @@ export default function RaffleFundingPage() {
                 <CreditCard size={18} />
               </div>
               <div className="flex-1">
-                <div className="text-sm font-semibold text-white">Entry Fee</div>
-                <div className="text-xs mt-0.5" style={{ color: BRAND.muted }}>
-                  Secure payment via Paystack · Non-refundable
+                <div className="text-sm font-semibold text-white">Entry Fee Per Ticket</div>
+                <div className="text-xs mt-0.5 flex gap-3" style={{ color: BRAND.muted }}>
+                  <span>🇬🇧 £{TICKET_PRICE_GBP} (Stripe)</span>
+                  <span>·</span>
+                  <span>🇳🇬 ₦{TICKET_PRICE_NGN} (Paystack)</span>
                 </div>
               </div>
-              <span className="text-2xl font-black" style={{ color: BRAND.gold }}>£{TICKET_PRICE}</span>
             </div>
 
             {/* Next draw info */}
@@ -182,7 +205,7 @@ export default function RaffleFundingPage() {
               <div className="flex flex-col gap-2">
                 <div className="text-base font-bold text-white">Buy tickets</div>
                 <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.55)" }}>
-                  Buy at least {MIN_TICKETS} tickets to unlock your draw entry. Each ticket costs £{TICKET_PRICE}.
+                  Buy at least {MIN_TICKETS} tickets to unlock your draw entry. Each ticket costs £{TICKET_PRICE_GBP}.
                 </p>
               </div>
 
@@ -207,8 +230,8 @@ export default function RaffleFundingPage() {
                 </div>
                 {pendingTickets > 0 && (
                   <div className="flex items-center justify-between text-xs" style={{ color: BRAND.muted }}>
-                    <span>Total</span>
-                    <span className="font-bold text-white">£{totalCost}</span>
+                    <span>Total (GBP)</span>
+                    <span className="font-bold text-white">£{totalCostGBP}</span>
                   </div>
                 )}
               </div>
@@ -222,7 +245,7 @@ export default function RaffleFundingPage() {
                 onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.13)"; }}
                 onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.08)"; }}
               >
-                <Ticket size={15} />Add a ticket — £{TICKET_PRICE}
+                <Ticket size={15} />Add a ticket — £{TICKET_PRICE_GBP}
               </button>
 
               {/* Confirm & pay button — only when >= MIN_TICKETS */}
@@ -230,15 +253,12 @@ export default function RaffleFundingPage() {
                 <button
                   type="button"
                   onClick={handleConfirmEntry}
-                  disabled={isEntering}
-                  className="w-full flex items-center justify-center gap-2 h-12 rounded-xl text-sm font-bold transition-all duration-200 disabled:opacity-60"
+                  className="w-full flex items-center justify-center gap-2 h-12 rounded-xl text-sm font-bold transition-all duration-200"
                   style={{ backgroundColor: BRAND.gold, color: BRAND.primary }}
-                  onMouseEnter={(e) => { if (!isEntering) e.currentTarget.style.opacity = "0.9"; }}
+                  onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.9"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
                 >
-                  {isEntering
-                    ? <><Loader2 size={15} className="animate-spin" />Redirecting to payment…</>
-                    : <><CheckCircle2 size={15} />Pay & enter — {pendingTickets} tickets · £{totalCost}</>}
+                  <CheckCircle2 size={15} />Pay & enter — {pendingTickets} tickets · £{totalCostGBP}
                 </button>
               )}
             </div>
@@ -303,6 +323,18 @@ export default function RaffleFundingPage() {
           </div>
         </div>
       </div>
+
+      {/* Payment Modal */}
+      <RafflePaymentModal
+        isOpen={paymentModalOpen}
+        onClose={() => setPaymentModalOpen(false)}
+        ticketCount={pendingTickets}
+        priceGBP={TICKET_PRICE_GBP}
+        priceNGN={TICKET_PRICE_NGN}
+        onPaymentSuccess={handlePaymentSuccess}
+        userEmail={userEmail}
+        userId={userId}
+      />
     </div>
   );
 }

@@ -28,6 +28,7 @@ export interface DocumentRequestListResponse {
 }
 
 export interface DocumentRequestListParams {
+  clientId?: number;  // Filter by client
   status?: number;    // 0=Pending, 1=Submitted, 2=Overdue, 3=Approved, 4=Rejected
   search?: string;
   sortBy?: string;

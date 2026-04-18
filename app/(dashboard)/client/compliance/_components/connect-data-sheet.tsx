@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { SystemSheet } from "@/components/shared/system-sheet";
 import { Link2, CheckCircle2, Loader2, Building, Calculator, ExternalLink } from "lucide-react";
-import { useConnectBankMutation, useConnectTaxMutation } from "@/lib/api/complianceCentreApi";
+import { useConnectBankMutation, useConnectTaxMutation, FinancialRecordStatus } from "@/lib/api/complianceCentreApi";
 import { useToast } from "@/components/shared/toast";
 
 const BRAND = { primary: "#0A2463", gold: "#D4AF37", green: "#06D6A0", accent: "#3E92CC", muted: "#6B7280" };
@@ -24,12 +24,30 @@ interface ConnectDataSheetProps {
   isOpen: boolean;
   onClose: () => void;
   defaultTab?: TabKey;
+  financialStatus?: FinancialRecordStatus;
 }
 
-export function ConnectDataSheet({ isOpen, onClose, defaultTab = "bank" }: ConnectDataSheetProps) {
+export function ConnectDataSheet({ isOpen, onClose, defaultTab = "bank", financialStatus }: ConnectDataSheetProps) {
   const [tab, setTab]             = useState<TabKey>(defaultTab);
   const [connecting, setConnecting] = useState<string | null>(null);
   const [connected, setConnected]   = useState<string[]>([]);
+
+  // Seed connected state from real API status whenever the sheet opens
+  useEffect(() => {
+    if (!isOpen || !financialStatus) return;
+    const initial: string[] = [];
+    if (financialStatus.isBankConnected) {
+      const p = financialStatus.bankProvider?.toLowerCase();
+      if (p === "truelayer") initial.push("truelayer");
+      else if (p === "mono")  initial.push("mono");
+    }
+    if (financialStatus.isTaxConnected) {
+      const p = financialStatus.taxProvider?.toUpperCase();
+      if (p === "HMRC") initial.push("hmrc");
+      else if (p === "FIRS") initial.push("firs");
+    }
+    setConnected(initial);
+  }, [isOpen, financialStatus]);
 
   const { toast } = useToast();
   const [connectBank] = useConnectBankMutation();

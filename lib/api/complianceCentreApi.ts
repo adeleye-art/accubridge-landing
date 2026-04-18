@@ -40,6 +40,44 @@ export interface ComplianceCentreAlert {
   createdAt: string;
 }
 
+// ─── Evaluate ─────────────────────────────────────────────────────────────────
+
+export interface EvaluateRuleResult {
+  ruleName: string;
+  passed: boolean;
+  score: number;
+  maxScore: number;
+  message: string;
+}
+
+export interface FundingEligibility {
+  isEligible: boolean;
+  reasons: string[];
+  complianceScore: {
+    currentScore: number;
+    requiredScore: number;
+    meetsRequirement: boolean;
+  };
+  monthsActive: {
+    currentMonths: number;
+    requiredMonths: number;
+    meetsRequirement: boolean;
+  };
+}
+
+export interface EvaluateResponse {
+  overallScore: number;
+  maxScore: number;
+  scoreStatus: string;
+  lastEvaluated: string;
+  categorisationCompleteness: EvaluateRuleResult;
+  reconciliationRecency: EvaluateRuleResult;
+  identityVerification: EvaluateRuleResult;
+  registrationLegal: EvaluateRuleResult;
+  amlCheck: EvaluateRuleResult;
+  fundingEligibility: FundingEligibility;
+}
+
 // ─── KYC ──────────────────────────────────────────────────────────────────────
 
 export interface KycStatus {
@@ -69,6 +107,11 @@ export interface SubmitKycInput {
   idDocumentUrl: string;
 }
 
+export interface SubmitKycMultiEntryInput {
+  personalInformationJson: string;  // JSON-stringified array of personal info objects
+  governmentIssuedIdsJson: string;  // JSON-stringified array of ID objects
+}
+
 // ─── KYB ──────────────────────────────────────────────────────────────────────
 
 export interface KybStatus {
@@ -89,8 +132,16 @@ export interface SubmitKybInput {
   certificateOfIncorporationUrl: string;
 }
 
+export interface SubmitKybMultiEntryInput {
+  jurisdiction: string;
+  companiesHouseNumber: string;
+  submittedLegalName: string;
+  authorizedDirectorsJson: string;  // JSON-stringified array of director objects
+  certificateOfIncorporationUrl: string;
+}
+
 export interface FixLegalNameInput {
-  correctedName: string;
+  correctedBusinessName: string;
 }
 
 // ─── Financial ────────────────────────────────────────────────────────────────
@@ -114,8 +165,9 @@ export interface ConnectBankInput {
 }
 
 export interface ConnectTaxInput {
-  provider: string;    // "HMRC" | "FIRS"
-  jurisdiction: string; // "GB" | "NG"
+  provider: string;      // "HMRC" | "FIRS"
+  jurisdiction: string;  // "GB" | "NG"
+  vatNumber?: string;
 }
 
 // ─── Documents ────────────────────────────────────────────────────────────────
@@ -181,7 +233,7 @@ export interface OperatingHistoryResponse {
 
 export const complianceCentreApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
-    // 14.1 Dashboard
+    // Dashboard
     getComplianceCentreDashboard: builder.query<ComplianceCentreDashboard, void>({
       query: () => "/compliancecentre",
       transformResponse: (res: { success: boolean; data: ComplianceCentreDashboard } | ComplianceCentreDashboard) =>
@@ -189,7 +241,15 @@ export const complianceCentreApi = baseApi.injectEndpoints({
       providesTags: ["ComplianceCentre"],
     }),
 
-    // 14.2 KYC status
+    // Evaluate compliance (real scoring engine)
+    evaluateCompliance: builder.query<EvaluateResponse, void>({
+      query: () => "/compliancecentre/evaluate",
+      transformResponse: (res: { success: boolean; data: EvaluateResponse } | EvaluateResponse) =>
+        "data" in res && res.data ? res.data : (res as EvaluateResponse),
+      providesTags: ["ComplianceCentre"],
+    }),
+
+    // KYC status
     getKycStatus: builder.query<KycStatus, void>({
       query: () => "/compliancecentre/kyc",
       transformResponse: (res: { success: boolean; data: KycStatus } | KycStatus) =>
@@ -197,13 +257,19 @@ export const complianceCentreApi = baseApi.injectEndpoints({
       providesTags: ["ComplianceCentre"],
     }),
 
-    // 14.3 Submit KYC
+    // Submit KYC (single entry)
     submitKyc: builder.mutation<{ message: string }, SubmitKycInput>({
       query: (body) => ({ url: "/compliancecentre/kyc", method: "POST", body }),
       invalidatesTags: ["ComplianceCentre"],
     }),
 
-    // 14.4 KYB status
+    // Submit KYC (multi-entry)
+    submitKycMultiEntry: builder.mutation<{ message: string }, SubmitKycMultiEntryInput>({
+      query: (body) => ({ url: "/compliancecentre/kyc/multi-entry", method: "POST", body }),
+      invalidatesTags: ["ComplianceCentre"],
+    }),
+
+    // KYB status
     getKybStatus: builder.query<KybStatus, void>({
       query: () => "/compliancecentre/kyb",
       transformResponse: (res: { success: boolean; data: KybStatus } | KybStatus) =>
@@ -211,19 +277,25 @@ export const complianceCentreApi = baseApi.injectEndpoints({
       providesTags: ["ComplianceCentre"],
     }),
 
-    // 14.5 Submit KYB
+    // Submit KYB (single entry)
     submitKyb: builder.mutation<{ message: string }, SubmitKybInput>({
       query: (body) => ({ url: "/compliancecentre/kyb", method: "POST", body }),
       invalidatesTags: ["ComplianceCentre"],
     }),
 
-    // 14.6 Fix legal name mismatch
+    // Submit KYB (multi-entry — multiple directors)
+    submitKybMultiEntry: builder.mutation<{ message: string }, SubmitKybMultiEntryInput>({
+      query: (body) => ({ url: "/compliancecentre/kyb/multi-entry", method: "POST", body }),
+      invalidatesTags: ["ComplianceCentre"],
+    }),
+
+    // Fix legal name mismatch
     fixLegalName: builder.mutation<{ message: string }, FixLegalNameInput>({
       query: (body) => ({ url: "/compliancecentre/kyb/legal-name", method: "PUT", body }),
       invalidatesTags: ["ComplianceCentre"],
     }),
 
-    // 14.7 Financial record status
+    // Financial record status
     getFinancialStatus: builder.query<FinancialRecordStatus, void>({
       query: () => "/compliancecentre/financial",
       transformResponse: (res: { success: boolean; data: FinancialRecordStatus } | FinancialRecordStatus) =>
@@ -231,19 +303,19 @@ export const complianceCentreApi = baseApi.injectEndpoints({
       providesTags: ["ComplianceCentre"],
     }),
 
-    // 14.8 Connect bank
+    // Connect bank account
     connectBank: builder.mutation<{ message: string }, ConnectBankInput>({
       query: (body) => ({ url: "/compliancecentre/financial/bank/connect", method: "POST", body }),
       invalidatesTags: ["ComplianceCentre"],
     }),
 
-    // 14.9 Connect tax
+    // Connect tax / VAT provider
     connectTax: builder.mutation<{ message: string }, ConnectTaxInput>({
       query: (body) => ({ url: "/compliancecentre/financial/tax/connect", method: "POST", body }),
       invalidatesTags: ["ComplianceCentre"],
     }),
 
-    // 14.10 Get documents
+    // Get compliance documents
     getComplianceDocuments: builder.query<DocumentsResponse, void>({
       query: () => "/compliancecentre/documents",
       transformResponse: (res: { success: boolean; data: DocumentsResponse } | DocumentsResponse) =>
@@ -251,7 +323,7 @@ export const complianceCentreApi = baseApi.injectEndpoints({
       providesTags: ["ComplianceCentre"],
     }),
 
-    // 14.11 Upload document
+    // Upload compliance document
     uploadComplianceDocument: builder.mutation<{ message: string }, UploadDocumentInput>({
       query: (data) => {
         const formData = new FormData();
@@ -266,7 +338,7 @@ export const complianceCentreApi = baseApi.injectEndpoints({
       invalidatesTags: ["ComplianceCentre"],
     }),
 
-    // 14.12 AML report
+    // AML / risk report
     getAmlReport: builder.query<AmlReport, void>({
       query: () => "/compliancecentre/aml",
       transformResponse: (res: { success: boolean; data: AmlReport } | AmlReport) =>
@@ -274,13 +346,13 @@ export const complianceCentreApi = baseApi.injectEndpoints({
       providesTags: ["ComplianceCentre"],
     }),
 
-    // 14.13 Review AML
+    // Mark AML report as reviewed
     reviewAml: builder.mutation<{ message: string }, void>({
-      query: () => ({ url: "/compliancecentre/aml/review", method: "POST" }),
+      query: () => ({ url: "/compliancecentre/aml/review", method: "POST", body: { isReviewed: true } }),
       invalidatesTags: ["ComplianceCentre"],
     }),
 
-    // 14.14 Get alerts
+    // Get open compliance alerts
     getComplianceAlerts: builder.query<AlertsResponse, void>({
       query: () => "/compliancecentre/alerts",
       transformResponse: (res: { success: boolean; data: AlertsResponse } | AlertsResponse) =>
@@ -288,19 +360,19 @@ export const complianceCentreApi = baseApi.injectEndpoints({
       providesTags: ["ComplianceCentre"],
     }),
 
-    // 14.15 Resolve alert
+    // Resolve a single alert
     resolveAlert: builder.mutation<{ message: string }, number>({
-      query: (alertId) => ({ url: `/compliancecentre/alerts/${alertId}/resolve`, method: "POST" }),
+      query: (alertId) => ({ url: `/compliancecentre/alerts/${alertId}/resolve`, method: "POST", body: { alertId } }),
       invalidatesTags: ["ComplianceCentre"],
     }),
 
-    // 14.16 Resolve all alerts
+    // Resolve all open alerts
     resolveAllAlerts: builder.mutation<{ message: string }, void>({
       query: () => ({ url: "/compliancecentre/alerts/resolve-all", method: "POST" }),
       invalidatesTags: ["ComplianceCentre"],
     }),
 
-    // 14.17 Operating history
+    // Operating history
     getOperatingHistory: builder.query<OperatingHistoryResponse, void>({
       query: () => "/compliancecentre/operating-history",
       transformResponse: (res: { success: boolean; data: OperatingHistoryResponse } | OperatingHistoryResponse) =>
@@ -312,10 +384,13 @@ export const complianceCentreApi = baseApi.injectEndpoints({
 
 export const {
   useGetComplianceCentreDashboardQuery,
+  useEvaluateComplianceQuery,
   useGetKycStatusQuery,
   useSubmitKycMutation,
+  useSubmitKycMultiEntryMutation,
   useGetKybStatusQuery,
   useSubmitKybMutation,
+  useSubmitKybMultiEntryMutation,
   useFixLegalNameMutation,
   useGetFinancialStatusQuery,
   useConnectBankMutation,

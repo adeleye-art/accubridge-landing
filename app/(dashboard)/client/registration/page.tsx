@@ -1,12 +1,16 @@
 "use client";
 
 import React, { useState } from "react";
-import { Plus, CheckCircle2, Clock, FileText } from "lucide-react";
+import { Plus, CheckCircle2, Clock, FileText, Loader2 } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { RegistrationHistoryTable } from "./_components/registration-history-table";
 import { NewRegistrationSheet } from "./_components/new-registration-sheet";
 import { BusinessDetailsSheet } from "./_components/business-details-sheet";
-import { BusinessRegistration } from "@/types/tools";
+import { BusinessRegistration, RegistrationStatus } from "@/types/tools";
+import {
+  useGetBusinessRegistrationsQuery,
+  ApiBusinessRegistration,
+} from "@/lib/api/businessRegistrationApi";
 
 const BRAND = {
   primary: "#0A2463",
@@ -16,68 +20,47 @@ const BRAND = {
   muted: "#6B7280",
 };
 
-const MOCK_REGISTRATIONS: BusinessRegistration[] = [
-  {
-    id: "reg1",
-    country: "uk",
-    business_name: "Apex Solutions Ltd",
-    structure: "Private Limited Company",
-    status: "completed",
-    initiated_at: "2026-01-10",
-    last_updated: "2026-01-18",
-    reference: "15234789",
-    estimated_completion: "2026-01-18",
-    current_step: 4,
+// ─── Map API response → UI type ───────────────────────────────────────────────
+
+const STATUS_MAP: Record<string, RegistrationStatus> = {
+  Draft: "draft",
+  Submitted: "pending_review",
+  UnderReview: "in_progress",
+  Completed: "completed",
+  Rejected: "rejected",
+  Cancelled: "rejected",
+};
+
+function mapApiToUI(reg: ApiBusinessRegistration): BusinessRegistration {
+  return {
+    id: String(reg.id),
+    country: reg.jurisdiction === 1 ? "uk" : "nigeria",
+    business_name: reg.businessName || "Untitled Registration",
+    structure: reg.structure || "",
+    status: STATUS_MAP[reg.status] ?? "draft",
+    initiated_at: reg.createdAt?.split("T")[0] ?? "",
+    last_updated: reg.updatedAt?.split("T")[0] ?? "",
+    reference: reg.referenceNumber,
+    estimated_completion: reg.estimatedCompletion,
+    current_step: reg.currentStep ?? 1,
     total_steps: 4,
-    notes: "Certificate of Incorporation issued",
-  },
-  {
-    id: "reg2",
-    country: "nigeria",
-    business_name: "GreenPath Ventures",
-    structure: "Limited Liability Company",
-    status: "in_progress",
-    initiated_at: "2026-03-05",
-    last_updated: "2026-03-20",
-    reference: "CAC-2026-044821",
-    current_step: 2,
-    total_steps: 4,
-    notes: "Name reservation approved — awaiting document submission",
-  },
-  {
-    id: "reg3",
-    country: "uk",
-    business_name: "BridgeTech Consulting LLP",
-    structure: "LLP",
-    status: "draft",
-    initiated_at: "2026-03-25",
-    last_updated: "2026-03-25",
-    current_step: 1,
-    total_steps: 4,
-  },
-];
+    notes: reg.notes,
+  };
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function RegistrationPage() {
-  const [registrations, setRegistrations] =
-    useState<BusinessRegistration[]>(MOCK_REGISTRATIONS);
+  const { data: listData, isLoading, isError } = useGetBusinessRegistrationsQuery({});
+
+  const registrations: BusinessRegistration[] = (listData?.registrations ?? []).map(mapApiToUI);
+
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingReg, setEditingReg] = useState<BusinessRegistration | null>(null);
   const [viewingReg, setViewingReg] = useState<BusinessRegistration | null>(null);
   const [auditedRegId, setAuditedRegId] = useState<string | null>(null);
 
-  const handleNewComplete = async (regData: Omit<BusinessRegistration, "id">) => {
-    await new Promise((res) => setTimeout(res, 1000));
-    const newReg: BusinessRegistration = {
-      ...regData,
-      id: `reg-${Date.now()}`,
-      reference:
-        regData.country === "uk"
-          ? String(Math.floor(Math.random() * 90000000) + 10000000)
-          : `CAC-${new Date().getFullYear()}-${String(
-              Math.floor(Math.random() * 900000) + 100000
-            )}`,
-    };
-    setRegistrations((prev) => [newReg, ...prev]);
+  const handleNewComplete = () => {
     setEditingReg(null);
     setSheetOpen(false);
   };
@@ -163,7 +146,7 @@ export default function RegistrationPage() {
             >
               <span style={{ color: s.color }}>{s.icon}</span>
               <span className="text-2xl font-bold" style={{ color: s.color }}>
-                {s.value}
+                {isLoading ? "—" : s.value}
               </span>
               <span className="text-xs" style={{ color: BRAND.muted }}>
                 {s.label}
@@ -179,12 +162,17 @@ export default function RegistrationPage() {
               Registration History
             </h3>
             <p className="text-xs mt-0.5" style={{ color: BRAND.muted }}>
-              {total} registration{total !== 1 ? "s" : ""} ·
-              <span style={{ color: BRAND.gold }}> eye</span> = view details ·
-              <span style={{ color: BRAND.gold }}> ↺</span> = continue ·
-              <span style={{ color: BRAND.gold }}> shield</span> = request audit
+              {isLoading ? "Loading…" : `${total} registration${total !== 1 ? "s" : ""}`}
+              {!isLoading && (
+                <>
+                  {" "}·<span style={{ color: BRAND.gold }}> eye</span> = view details ·
+                  <span style={{ color: BRAND.gold }}> ↺</span> = continue ·
+                  <span style={{ color: BRAND.gold }}> shield</span> = request audit
+                </>
+              )}
             </p>
           </div>
+
           {auditedRegId && (
             <div
               className="flex items-center gap-2 px-4 py-3 rounded-xl border"
@@ -196,12 +184,39 @@ export default function RegistrationPage() {
               </span>
             </div>
           )}
-          <RegistrationHistoryTable
-            registrations={registrations}
-            onViewDetails={handleViewDetails}
-            onResume={handleResume}
-            onRequestAudit={handleRequestAudit}
-          />
+
+          {isLoading ? (
+            <div
+              className="rounded-2xl border p-12 flex flex-col items-center gap-3"
+              style={{
+                backgroundColor: "rgba(255,255,255,0.02)",
+                borderColor: "rgba(255,255,255,0.06)",
+              }}
+            >
+              <Loader2 size={24} className="animate-spin" style={{ color: BRAND.muted }} />
+              <p className="text-sm" style={{ color: BRAND.muted }}>Loading registrations…</p>
+            </div>
+          ) : isError ? (
+            <div
+              className="rounded-2xl border p-12 flex flex-col items-center gap-3"
+              style={{
+                backgroundColor: "rgba(239,68,68,0.04)",
+                borderColor: "rgba(239,68,68,0.15)",
+              }}
+            >
+              <p className="text-sm text-red-400 font-medium">Failed to load registrations</p>
+              <p className="text-xs" style={{ color: BRAND.muted }}>
+                Please refresh the page or try again later.
+              </p>
+            </div>
+          ) : (
+            <RegistrationHistoryTable
+              registrations={registrations}
+              onViewDetails={handleViewDetails}
+              onResume={handleResume}
+              onRequestAudit={handleRequestAudit}
+            />
+          )}
         </div>
 
         <NewRegistrationSheet

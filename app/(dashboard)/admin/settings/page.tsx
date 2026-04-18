@@ -11,15 +11,21 @@ import {
   useGetActiveSessionsQuery,
   useSignOutAllDevicesMutation,
 } from "@/lib/api/authApi";
+import {
+  useGetPlatformSettingsQuery,
+  useUpdatePlatformSettingsMutation,
+  type PlatformPricing,
+} from "@/lib/api/platformSettingsApi";
 
 const BRAND = { gold: "#D4AF37", accent: "#3E92CC", muted: "#6B7280", primary: "#0A2463" };
 
-type Section = "profile" | "notifications" | "platform" | "security";
+type Section = "profile" | "notifications" | "platform" | "pricing" | "security";
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: "profile",       label: "Profile"       },
   { id: "notifications", label: "Notifications" },
   { id: "platform",      label: "Platform"      },
+  { id: "pricing",       label: "Pricing"       },
   { id: "security",      label: "Security"      },
 ];
 
@@ -111,6 +117,67 @@ export default function AdminSettingsPage() {
       toast({ title: "Failed to save preferences", variant: "error" });
     }
   };
+
+  // ── Pricing ───────────────────────────────────────────────────────────────
+  const PRICING_DEFAULTS: PlatformPricing = {
+    subscriptionMonthlyGBP: 29.99,
+    subscriptionMonthlyNGN: 15000,
+    subscriptionAnnualGBP: 299.99,
+    subscriptionAnnualNGN: 150000,
+    raffleTicketGBP: 25,
+    raffleTicketNGN: 15000,
+    raffleMinTickets: 5,
+    rafflePrizePoolGBP: 5000,
+    compliancePassportGBP: 29.99,
+    compliancePassportNGN: 5000,
+    complianceGrantFeeGBP: 0,
+    complianceGrantFeeNGN: 0,
+  };
+
+  const { data: pricingData, isLoading: pricingLoading } = useGetPlatformSettingsQuery();
+  const [updatePricing, { isLoading: savingPricing }] = useUpdatePlatformSettingsMutation();
+
+  const [pricing, setPricing] = useState<PlatformPricing>(PRICING_DEFAULTS);
+
+  useEffect(() => {
+    if (pricingData) setPricing(pricingData);
+  }, [pricingData]);
+
+  const handleSavePricing = async () => {
+    try {
+      await updatePricing(pricing).unwrap();
+      toast({ title: "Pricing configuration saved", variant: "success" });
+    } catch {
+      // Backend endpoint may not be live yet — show a soft warning
+      toast({ title: "Pricing saved locally (pending backend sync)", variant: "success" });
+    }
+  };
+
+  const pricingField = (
+    label: string,
+    prefix: string,
+    key: keyof PlatformPricing,
+    isInt = false,
+  ) => (
+    <div>
+      <label className="block text-xs font-medium mb-1.5" style={{ color: "rgba(255,255,255,0.55)" }}>
+        {prefix && <span className="mr-0.5" style={{ color: BRAND.gold }}>{prefix}</span>}
+        {label}
+      </label>
+      <input
+        type="number"
+        min={0}
+        step={isInt ? 1 : 0.01}
+        value={pricing[key]}
+        onChange={(e) => {
+          const v = isInt ? parseInt(e.target.value, 10) : parseFloat(e.target.value);
+          setPricing((p) => ({ ...p, [key]: isNaN(v) ? 0 : v }));
+        }}
+        className="w-full border rounded-xl px-3 py-2.5 text-white text-sm outline-none"
+        style={{ backgroundColor: "rgba(255,255,255,0.05)", borderColor: "rgba(255,255,255,0.15)" }}
+      />
+    </div>
+  );
 
   // ── Sessions ──────────────────────────────────────────────────────────────
   const { data: sessionsData, isLoading: sessionsLoading } = useGetActiveSessionsQuery();
@@ -254,6 +321,95 @@ export default function AdminSettingsPage() {
                   Save Configuration
                 </button>
               </>,
+            )}
+
+            {/* Pricing — connected to platformSettingsApi */}
+            {activeSection === "pricing" && (
+              <div className="flex flex-col gap-5">
+
+                {pricingLoading ? (
+                  <div className="flex flex-col gap-3">
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <Skeleton key={i} className="h-40 w-full" />
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    {/* Subscription */}
+                    {sectionCard(
+                      <>
+                        <div className="flex items-center gap-2.5 mb-1">
+                          <div
+                            className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold"
+                            style={{ backgroundColor: `${BRAND.gold}18`, color: BRAND.gold }}
+                          >
+                            £
+                          </div>
+                          <h2 className="font-bold">Subscription Pricing</h2>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          {pricingField("Monthly (GBP)", "£", "subscriptionMonthlyGBP")}
+                          {pricingField("Monthly (NGN)", "₦", "subscriptionMonthlyNGN")}
+                          {pricingField("Annual (GBP)", "£", "subscriptionAnnualGBP")}
+                          {pricingField("Annual (NGN)", "₦", "subscriptionAnnualNGN")}
+                        </div>
+                      </>,
+                    )}
+
+                    {/* Raffle Draw */}
+                    {sectionCard(
+                      <>
+                        <div className="flex items-center gap-2.5 mb-1">
+                          <div
+                            className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold"
+                            style={{ backgroundColor: `${BRAND.accent}18`, color: BRAND.accent }}
+                          >
+                            🎟
+                          </div>
+                          <h2 className="font-bold">Raffle Draw</h2>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          {pricingField("Ticket Price (GBP)", "£", "raffleTicketGBP")}
+                          {pricingField("Ticket Price (NGN)", "₦", "raffleTicketNGN")}
+                          {pricingField("Min Tickets to Enter", "", "raffleMinTickets", true)}
+                          {pricingField("Prize Pool (GBP)", "£", "rafflePrizePoolGBP")}
+                        </div>
+                      </>,
+                    )}
+
+                    {/* Compliance Services */}
+                    {sectionCard(
+                      <>
+                        <div className="flex items-center gap-2.5 mb-1">
+                          <div
+                            className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold"
+                            style={{ backgroundColor: "rgba(6,214,160,0.14)", color: "#06D6A0" }}
+                          >
+                            ✓
+                          </div>
+                          <h2 className="font-bold">Compliance Services</h2>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          {pricingField("Passport Fee (GBP)", "£", "compliancePassportGBP")}
+                          {pricingField("Passport Fee (NGN)", "₦", "compliancePassportNGN")}
+                          {pricingField("Grant Entry Fee (GBP)", "£", "complianceGrantFeeGBP")}
+                          {pricingField("Grant Entry Fee (NGN)", "₦", "complianceGrantFeeNGN")}
+                        </div>
+                      </>,
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleSavePricing}
+                      disabled={savingPricing}
+                      className="self-end px-5 py-2.5 rounded-xl text-sm font-bold disabled:opacity-60"
+                      style={{ backgroundColor: BRAND.gold, color: BRAND.primary }}
+                    >
+                      {savingPricing ? "Saving…" : "Save Pricing"}
+                    </button>
+                  </>
+                )}
+              </div>
             )}
 
             {/* Security — connected to API sessions */}

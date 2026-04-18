@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { getAuthUserId } from "@/lib/auth";
 import { PageHeader } from "@/components/shared/page-header";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { TopBanner } from "./_components/top-banner";
@@ -12,279 +13,444 @@ import { PassportSheet } from "./_components/passport-sheet";
 import { UploadDocumentSheet } from "./_components/upload-document-sheet";
 import { ConnectDataSheet } from "./_components/connect-data-sheet";
 import { FixActionSheet, FixType } from "./_components/fix-action-sheet";
-import { ComplianceBreakdown, ActionItem, KYCData, CompliancePassport } from "@/types/compliance";
+import { ComplianceBreakdown, ActionItem, KYCData, CompliancePassport, SectionScore } from "@/types/compliance";
 import {
   useGetComplianceCentreDashboardQuery,
-  useSubmitKycMutation,
+  useEvaluateComplianceQuery,
+  useGetKycStatusQuery,
+  useGetFinancialStatusQuery,
+  useSubmitKycMultiEntryMutation,
   useGetAmlReportQuery,
-  useReviewAmlMutation,
   useGetComplianceDocumentsQuery,
+  useGetComplianceAlertsQuery,
+  useGetOperatingHistoryQuery,
   ComplianceSectionBreakdown,
   AmlReport,
-  DocumentsResponse,
-  ComplianceDocument,
+  EvaluateResponse,
+  EvaluateRuleResult,
+  FinancialRecordStatus,
+  ComplianceCentreAlert,
+  OperatingHistoryResponse,
 } from "@/lib/api/complianceCentreApi";
 import { useToast } from "@/components/shared/toast";
 
-// ── Mock compliance breakdown — fresh / zero state ───────────────────────────
-const MOCK_BREAKDOWN: ComplianceBreakdown = {
-  identity: {
-    earned: 0, max: 15,
+// ── Fallback baseline structure — used when evaluate data is absent ──────────
+function buildFallbackSection(max: number, actionLabel: string, actionType: SectionScore["action_type"]): SectionScore {
+  return {
+    earned: 0, max,
     passed: [],
-    missing: [
-      "Owner KYC not yet verified (0/8)",
-      "Business KYB not started (0/7)",
-    ],
-    action_label: "Start KYC Verification",
-    action_type: "review",
+    missing: ["Awaiting verification data"],
+    action_label: actionLabel,
+    action_type: actionType,
+    checks: [],
+  };
+}
+
+// ── Converts an EvaluateRuleResult into a SectionScore ───────────────────────
+function ruleToSection(
+  rule: EvaluateRuleResult,
+  actionLabel: string,
+  actionType: SectionScore["action_type"],
+  source: string,
+): SectionScore {
+  return {
+    earned: rule.score,
+    max: rule.maxScore,
+    passed: rule.passed ? [rule.message] : [],
+    missing: rule.passed ? [] : [rule.message],
+    action_label: actionLabel,
+    action_type: actionType,
     checks: [
       {
-        label: "Owner KYC passed",
-        status: "fail", points: 0, max: 8,
-        source: "Sumsub", source_type: "api",
-        detail: "KYC not yet initiated. Complete identity verification to score this check.",
-        checked_at: "2026-04-06T09:00:00Z",
-      },
-      {
-        label: "Business KYB passed",
-        status: "fail", points: 0, max: 7,
-        source: "Sumsub", source_type: "api",
-        detail: "Business KYB not yet initiated. Required to verify the legal entity.",
-        checked_at: "2026-04-06T09:00:00Z",
+        label: rule.ruleName,
+        status: rule.passed ? "pass" : "fail",
+        points: rule.score,
+        max: rule.maxScore,
+        source,
+        source_type: "api",
+        detail: rule.message,
+        checked_at: new Date().toISOString(),
       },
     ],
-  },
-  registration: {
-    earned: 0, max: 15,
-    passed: [],
-    missing: [
-      "Registration number not provided (0/3)",
-      "Legal name not verified against official record (0/5)",
-      "Entity status not confirmed (0/4)",
-      "Core profile incomplete (0/3)",
-    ],
-    action_label: "Fix Name Match",
-    action_type: "fix",
-    checks: [
-      {
-        label: "Registration number provided",
-        status: "fail", points: 0, max: 3,
-        source: "User submitted", source_type: "user_input",
-        detail: "No Companies House or CAC registration number submitted.",
-        checked_at: "2026-04-06T08:00:00Z",
-      },
-      {
-        label: "Legal name matches official record",
-        status: "fail", points: 0, max: 5,
-        source: "Companies House", source_type: "api",
-        detail: "Company name not yet verified against the official Companies House record.",
-        checked_at: "2026-04-06T08:00:00Z",
-      },
-      {
-        label: "Entity status active",
-        status: "fail", points: 0, max: 4,
-        source: "Companies House", source_type: "api",
-        detail: "Entity status not confirmed. Registration number required first.",
-        checked_at: "2026-04-06T08:00:00Z",
-      },
-      {
-        label: "Core profile complete",
-        status: "fail", points: 0, max: 3,
-        source: "Platform logic", source_type: "internal_logic",
-        detail: "Business name, industry, type, and operating country are not all populated.",
-        checked_at: "2026-04-06T08:00:00Z",
-      },
-    ],
-  },
-  tax: {
-    earned: 0, max: 15,
-    passed: [],
-    missing: [
+  };
+}
+
+// ── Build full ComplianceBreakdown from all API data ─────────────────────────
+function buildBreakdown(
+  evaluateData: EvaluateResponse | undefined,
+  amlData: AmlReport | undefined,
+  documentsData: { documents: { documentType: string; fileName: string; status: string; uploadedAt: string; fileSizeBytes: number }[] } | undefined,
+  financialStatus: FinancialRecordStatus | undefined,
+  alertsData: { alerts: ComplianceCentreAlert[] } | undefined,
+  historyData: OperatingHistoryResponse | undefined,
+): ComplianceBreakdown {
+  // ── Identity & Verification (max 20) ────────────────────────────────────────
+  const identity: SectionScore = evaluateData
+    ? ruleToSection(evaluateData.identityVerification, "Verify Identity", "review", "Platform")
+    : buildFallbackSection(20, "Start KYC Verification", "review");
+
+  // Enrich identity checks with KYC and KYB sub-checks
+  identity.checks = [
+    {
+      label: "Owner KYC passed",
+      status: evaluateData?.identityVerification.passed ? "pass" : "fail",
+      points: evaluateData ? Math.floor(evaluateData.identityVerification.score / 2) : 0,
+      max: evaluateData ? Math.floor(evaluateData.identityVerification.maxScore / 2) : 10,
+      source: "Sumsub", source_type: "api",
+      detail: evaluateData?.identityVerification.passed
+        ? "KYC identity verified successfully."
+        : "KYC not yet initiated. Complete identity verification to score this check.",
+      checked_at: evaluateData?.lastEvaluated ?? new Date().toISOString(),
+    },
+    {
+      label: "Business KYB passed",
+      status: evaluateData?.identityVerification.passed ? "pass" : "fail",
+      points: evaluateData ? Math.ceil(evaluateData.identityVerification.score / 2) : 0,
+      max: evaluateData ? Math.ceil(evaluateData.identityVerification.maxScore / 2) : 10,
+      source: "Sumsub", source_type: "api",
+      detail: evaluateData?.identityVerification.passed
+        ? "Business KYB verified successfully."
+        : "Business KYB not yet initiated. Required to verify the legal entity.",
+      checked_at: evaluateData?.lastEvaluated ?? new Date().toISOString(),
+    },
+  ];
+
+  // ── Registration & Legal Status (max 15) ────────────────────────────────────
+  const registration: SectionScore = evaluateData
+    ? ruleToSection(evaluateData.registrationLegal, "Fix Registration", "fix", "Companies House")
+    : buildFallbackSection(15, "Fix Name Match", "fix");
+
+  registration.checks = [
+    {
+      label: "Registration number provided",
+      status: evaluateData?.registrationLegal.passed ? "pass" : "fail",
+      points: evaluateData?.registrationLegal.passed ? 3 : 0,
+      max: 3,
+      source: "User submitted", source_type: "user_input",
+      detail: evaluateData?.registrationLegal.passed
+        ? "Registration number submitted and verified."
+        : "No Companies House or CAC registration number submitted.",
+      checked_at: evaluateData?.lastEvaluated ?? new Date().toISOString(),
+    },
+    {
+      label: "Legal name matches official record",
+      status: evaluateData?.registrationLegal.passed ? "pass" : "fail",
+      points: evaluateData?.registrationLegal.passed ? 5 : 0,
+      max: 5,
+      source: "Companies House", source_type: "api",
+      detail: evaluateData?.registrationLegal.message ?? "Company name not yet verified against the official Companies House record.",
+      checked_at: evaluateData?.lastEvaluated ?? new Date().toISOString(),
+    },
+    {
+      label: "Entity status active",
+      status: evaluateData?.registrationLegal.passed ? "pass" : "fail",
+      points: evaluateData?.registrationLegal.passed ? 4 : 0,
+      max: 4,
+      source: "Companies House", source_type: "api",
+      detail: evaluateData?.registrationLegal.passed
+        ? "Entity confirmed as active."
+        : "Entity status not confirmed. Registration number required first.",
+      checked_at: evaluateData?.lastEvaluated ?? new Date().toISOString(),
+    },
+    {
+      label: "Core profile complete",
+      status: evaluateData?.registrationLegal.passed ? "pass" : "fail",
+      points: evaluateData?.registrationLegal.passed ? 3 : 0,
+      max: 3,
+      source: "Platform logic", source_type: "internal_logic",
+      detail: evaluateData?.registrationLegal.passed
+        ? "Business profile is complete."
+        : "Business name, industry, type, and operating country are not all populated.",
+      checked_at: evaluateData?.lastEvaluated ?? new Date().toISOString(),
+    },
+  ];
+
+  // ── Tax Setup (max 15) ──────────────────────────────────────────────────────
+  const taxConnected = financialStatus?.isTaxConnected ?? false;
+  const taxEarned = taxConnected ? 15 : 0;
+  const tax: SectionScore = {
+    earned: taxEarned,
+    max: 15,
+    passed: taxConnected ? [`${financialStatus?.taxProvider ?? "Tax provider"} connected`] : [],
+    missing: taxConnected ? [] : [
       "Tax ID not provided (0/4)",
       "VAT / payroll status not declared (0/4)",
-      "Filing calendar not configured (0/3)",
-      "HMRC obligations not synced (0/4)",
+      "HMRC obligations not synced (0/7)",
     ],
-    action_label: "Connect Tax Data",
+    action_label: taxConnected ? "View Tax Connection" : "Connect Tax Data",
     action_type: "connect",
     checks: [
       {
         label: "Tax ID provided",
-        status: "fail", points: 0, max: 4,
+        status: taxConnected ? "pass" : "fail",
+        points: taxConnected ? 4 : 0,
+        max: 4,
         source: "User submitted", source_type: "user_input",
-        detail: "UTR / tax ID not yet submitted.",
-        checked_at: "2026-04-06T11:00:00Z",
+        detail: taxConnected ? "Tax ID verified via connected provider." : "UTR / tax ID not yet submitted.",
+        checked_at: financialStatus?.taxConnectedAt ?? new Date().toISOString(),
       },
       {
         label: "VAT / payroll setup declared",
-        status: "fail", points: 0, max: 4,
+        status: taxConnected ? "pass" : "fail",
+        points: taxConnected ? 4 : 0,
+        max: 4,
         source: "User submitted", source_type: "user_input",
-        detail: "VAT registration and payroll status not yet declared.",
-        checked_at: "2026-04-06T11:00:00Z",
-      },
-      {
-        label: "Filing calendar configured",
-        status: "fail", points: 0, max: 3,
-        source: "Platform logic", source_type: "internal_logic",
-        detail: "No filing calendar set up. Connect HMRC (UK) or FIRS (Nigeria) to auto-populate obligations.",
-        checked_at: "2026-04-06T08:00:00Z",
+        detail: taxConnected
+          ? "VAT registration and payroll status confirmed."
+          : "VAT registration and payroll status not yet declared.",
+        checked_at: financialStatus?.taxConnectedAt ?? new Date().toISOString(),
       },
       {
         label: "Obligations synced from HMRC / FIRS",
-        status: "fail", points: 0, max: 4,
+        status: taxConnected ? (financialStatus?.taxSyncActive ? "pass" : "review") : "fail",
+        points: taxConnected ? 7 : 0,
+        max: 7,
         source: "HMRC / FIRS API", source_type: "api",
-        detail: "Tax obligations not yet retrieved. Connect HMRC (UK) or FIRS (Nigeria) to sync open and overdue obligations.",
-        checked_at: "2026-04-06T08:00:00Z",
+        detail: taxConnected
+          ? financialStatus?.taxSyncActive
+            ? "Tax obligations synced and up to date."
+            : "Connected but sync not yet active."
+          : "Tax obligations not yet retrieved. Connect HMRC (UK) or FIRS (Nigeria) to sync open and overdue obligations.",
+        checked_at: financialStatus?.taxConnectedAt ?? new Date().toISOString(),
       },
     ],
-  },
-  financial: {
-    earned: 0, max: 20,
-    passed: [],
-    missing: [
-      "No bank connected or statement imported (0/5)",
-      "No transactions imported (0/4)",
-      "Categorisation at 0% — minimum 80% required (0/4)",
-      "Reconciliation not started (0/5)",
-      "No receipt coverage (0/2)",
+  };
+
+  // ── Financial Records (max 20) ──────────────────────────────────────────────
+  const catRule = evaluateData?.categorisationCompleteness;
+  const recRule = evaluateData?.reconciliationRecency;
+  const bankConnected = financialStatus?.isBankConnected ?? false;
+  const financialEarned = (catRule?.score ?? 0) + (recRule?.score ?? 0);
+  const financialMax = (catRule?.maxScore ?? 10) + (recRule?.maxScore ?? 10);
+
+  const financial: SectionScore = {
+    earned: financialEarned,
+    max: financialMax,
+    passed: [
+      ...(catRule?.passed ? [catRule.message] : []),
+      ...(recRule?.passed ? [recRule.message] : []),
     ],
-    action_label: "Connect Bank Account",
+    missing: [
+      ...(catRule && !catRule.passed ? [catRule.message] : []),
+      ...(recRule && !recRule.passed ? [recRule.message] : []),
+      ...(!bankConnected && !catRule ? ["No bank connected or statement imported (0/5)"] : []),
+    ],
+    action_label: bankConnected ? "View Financial Records" : "Connect Bank Account",
     action_type: "connect",
     checks: [
       {
         label: "Bank connected or statement imported",
-        status: "fail", points: 0, max: 5,
+        status: bankConnected ? "pass" : "fail",
+        points: bankConnected ? 5 : 0,
+        max: 5,
         source: "TrueLayer", source_type: "api",
-        detail: "No bank account connected and no statement uploaded.",
-        checked_at: "2026-04-06T07:30:00Z",
+        detail: bankConnected
+          ? `${financialStatus?.bankProvider ?? "Bank"} connected${financialStatus?.bankConnectedAt ? ` on ${new Date(financialStatus.bankConnectedAt).toLocaleDateString("en-GB")}` : ""}.`
+          : "No bank account connected and no statement uploaded.",
+        checked_at: financialStatus?.bankConnectedAt ?? new Date().toISOString(),
       },
       {
         label: "Transactions imported",
-        status: "fail", points: 0, max: 4,
+        status: bankConnected ? "pass" : "fail",
+        points: bankConnected ? 4 : 0,
+        max: 4,
         source: "TrueLayer", source_type: "api",
-        detail: "No transactions available. Connect a bank account or import a statement first.",
-        checked_at: "2026-04-06T07:30:00Z",
+        detail: bankConnected
+          ? "Transactions available from connected bank account."
+          : "No transactions available. Connect a bank account or import a statement first.",
+        checked_at: financialStatus?.bankConnectedAt ?? new Date().toISOString(),
       },
       {
-        label: "Categorisation completeness",
-        status: "fail", points: 0, max: 4,
+        label: catRule?.ruleName ?? "Categorisation completeness",
+        status: catRule?.passed ? "pass" : "fail",
+        points: catRule?.score ?? 0,
+        max: catRule?.maxScore ?? 4,
         source: "Platform logic", source_type: "internal_logic",
-        detail: "No transactions categorised. Minimum 80% required for full points.",
-        checked_at: "2026-04-06T08:00:00Z",
+        detail: catRule?.message ?? "No transactions categorised. Minimum 80% required for full points.",
+        checked_at: evaluateData?.lastEvaluated ?? new Date().toISOString(),
       },
       {
-        label: "Reconciliation current",
-        status: "fail", points: 0, max: 5,
+        label: recRule?.ruleName ?? "Reconciliation current",
+        status: recRule?.passed ? "pass" : "fail",
+        points: recRule?.score ?? 0,
+        max: recRule?.maxScore ?? 5,
         source: "Platform logic", source_type: "internal_logic",
-        detail: "No reconciliation started. Reconcile within 30 days to score this check.",
-        checked_at: "2026-04-06T08:00:00Z",
-      },
-      {
-        label: "Receipt coverage / support evidence",
-        status: "fail", points: 0, max: 2,
-        source: "Platform logic", source_type: "internal_logic",
-        detail: "No receipts uploaded. Upload receipts for transactions over £50.",
-        checked_at: "2026-04-06T08:00:00Z",
+        detail: recRule?.message ?? "No reconciliation started. Reconcile within 30 days to score this check.",
+        checked_at: evaluateData?.lastEvaluated ?? new Date().toISOString(),
       },
     ],
-  },
-  risk: {
-    earned: 0, max: 15,
-    passed: [],
-    missing: ["AML / sanctions screening not yet completed (0/15)"],
-    action_label: "Start AML Screening",
-    action_type: "review",
-    checks: [
-      {
-        label: "Sanctions screening clear",
-        status: "pending", points: 0, max: 15,
-        source: "Sumsub", source_type: "api",
-        detail: "AML/sanctions screening not yet initiated. KYC must be completed first.",
-        checked_at: "2026-04-06T09:00:00Z",
-      },
-      {
-        label: "PEP check clear",
-        status: "pending", points: 0, max: 0,
-        source: "Sumsub", source_type: "api",
-        detail: "PEP check runs automatically when KYC verification is complete.",
-        checked_at: "2026-04-06T09:00:00Z",
-      },
-      {
-        label: "Adverse media check clear",
-        status: "pending", points: 0, max: 0,
-        source: "Sumsub", source_type: "api",
-        detail: "Adverse media check runs automatically when KYC verification is complete.",
-        checked_at: "2026-04-06T09:00:00Z",
-      },
-    ],
-  },
-  documents: {
-    earned: 0, max: 10,
-    passed: [],
-    missing: [
-      "No core documents uploaded (0/6)",
-      "No active documents to verify expiry (0/4)",
-    ],
+  };
+
+  // ── AML / Risk (max 15) ─────────────────────────────────────────────────────
+  const risk: SectionScore = evaluateData
+    ? ruleToSection(evaluateData.amlCheck, "View AML Report", "review", "Sumsub")
+    : buildFallbackSection(15, "Start AML Screening", "review");
+
+  risk.checks = [
+    {
+      label: "Sanctions screening clear",
+      status: amlData?.sanctionsScreeningStatus === "Clear" ? "pass" : "pending",
+      points: amlData?.sanctionsScreeningStatus === "Clear" ? 5 : 0,
+      max: 5,
+      source: "Sumsub", source_type: "api",
+      detail: amlData?.sanctionsScreeningStatus === "Clear"
+        ? "No matches found across OFAC, UN, EU, and UK sanctions lists."
+        : "AML/sanctions screening not yet initiated. KYC must be completed first.",
+      checked_at: amlData?.lastScannedAt ?? evaluateData?.lastEvaluated ?? new Date().toISOString(),
+    },
+    {
+      label: "PEP check clear",
+      status: amlData && !amlData.hasPepFlags ? "pass" : "pending",
+      points: amlData && !amlData.hasPepFlags ? 5 : 0,
+      max: 5,
+      source: "Sumsub", source_type: "api",
+      detail: amlData && !amlData.hasPepFlags
+        ? "Not identified as a Politically Exposed Person or close associate."
+        : "PEP check runs automatically when KYC verification is complete.",
+      checked_at: amlData?.lastScannedAt ?? evaluateData?.lastEvaluated ?? new Date().toISOString(),
+    },
+    {
+      label: "Adverse media check clear",
+      status: amlData?.adverseMediaStatus === "Clear" ? "pass" : "pending",
+      points: amlData?.adverseMediaStatus === "Clear" ? 5 : 0,
+      max: 5,
+      source: "Sumsub", source_type: "api",
+      detail: amlData?.adverseMediaStatus === "Clear"
+        ? "No relevant adverse media results from global news database scan."
+        : "Adverse media check runs automatically when KYC verification is complete.",
+      checked_at: amlData?.lastScannedAt ?? evaluateData?.lastEvaluated ?? new Date().toISOString(),
+    },
+  ];
+
+  if (amlData) {
+    risk.earned = risk.checks.reduce((sum, c) => sum + c.points, 0);
+    risk.passed = risk.checks.filter((c) => c.status === "pass").map((c) => c.label);
+    risk.missing = risk.checks.filter((c) => c.status !== "pass").map((c) => c.label);
+  }
+
+  // ── Documents (max 10) ──────────────────────────────────────────────────────
+  const docs = documentsData?.documents ?? [];
+  const verifiedDocs = docs.filter((d) => d.status === "Verified");
+  const docsEarned = Math.min(verifiedDocs.length * 3, 10);
+
+  const documents: SectionScore = {
+    earned: docsEarned,
+    max: 10,
+    passed: verifiedDocs.map((d) => `${d.documentType}: ${d.fileName}`),
+    missing: docs.length === 0
+      ? ["No core documents uploaded (0/6)", "No active documents to verify expiry (0/4)"]
+      : [],
     action_label: "Upload Documents",
     action_type: "upload",
-    checks: [
-      {
-        label: "Required documents uploaded",
-        status: "fail", points: 0, max: 6,
-        source: "User submitted", source_type: "user_input",
-        detail: "No documents uploaded. Upload Certificate of Incorporation, proof of address, and director ID.",
-        checked_at: "2026-04-06T16:00:00Z",
-      },
-      {
-        label: "No expired core document",
-        status: "pending", points: 0, max: 4,
-        source: "Platform logic", source_type: "internal_logic",
-        detail: "No documents submitted yet. Upload required documents to score this check.",
-        checked_at: "2026-04-06T08:00:00Z",
-      },
-    ],
-  },
-  behaviour: {
-    earned: 0, max: 5,
-    passed: [],
+    checks: docs.length > 0
+      ? docs.map((doc) => ({
+          label: `${doc.documentType}: ${doc.fileName}`,
+          status: doc.status === "Verified" ? "pass" as const : "review" as const,
+          points: doc.status === "Verified" ? 3 : 1,
+          max: 3,
+          source: "User submitted", source_type: "user_input" as const,
+          detail: `Status: ${doc.status} · Uploaded: ${new Date(doc.uploadedAt).toLocaleDateString("en-GB")} · Size: ${(doc.fileSizeBytes / 1024).toFixed(2)} KB`,
+          checked_at: doc.uploadedAt,
+        }))
+      : [
+          {
+            label: "Required documents uploaded",
+            status: "fail" as const, points: 0, max: 6,
+            source: "User submitted", source_type: "user_input" as const,
+            detail: "No documents uploaded. Upload Certificate of Incorporation, proof of address, and director ID.",
+            checked_at: new Date().toISOString(),
+          },
+          {
+            label: "No expired core document",
+            status: "pending" as const, points: 0, max: 4,
+            source: "Platform logic", source_type: "internal_logic" as const,
+            detail: "No documents submitted yet. Upload required documents to score this check.",
+            checked_at: new Date().toISOString(),
+          },
+        ],
+  };
+
+  // ── Operating History / Behaviour (max 5) ───────────────────────────────────
+  const openAlerts = (alertsData?.alerts ?? []).filter((a) => a.status === "Open");
+  const hasHistory = (historyData?.history?.length ?? 0) > 0;
+  const behaviourEarned = openAlerts.length === 0 && hasHistory ? 5 : openAlerts.length === 0 ? 3 : 0;
+
+  const behaviour: SectionScore = {
+    earned: behaviourEarned,
+    max: 5,
+    passed: behaviourEarned > 0 ? ["Platform activity recorded"] : [],
     missing: [
-      "No platform activity recorded (0/2)",
-      "Financial records not updated in 30 days (0/2)",
-      "Open compliance alerts unresolved (0/1)",
+      ...(openAlerts.length > 0 ? [`${openAlerts.length} open compliance alert(s) unresolved`] : []),
+      ...(!hasHistory ? ["No platform activity recorded"] : []),
     ],
-    action_label: "Resolve Alerts",
+    action_label: openAlerts.length > 0 ? "Resolve Alerts" : "View History",
     action_type: "fix",
     checks: [
       {
         label: "Active monthly use",
-        status: "fail", points: 0, max: 2,
+        status: hasHistory ? "pass" : "fail",
+        points: hasHistory ? 2 : 0,
+        max: 2,
         source: "Platform logic", source_type: "internal_logic",
-        detail: "No platform activity recorded for this account yet.",
-        checked_at: "2026-04-06T08:00:00Z",
+        detail: hasHistory
+          ? "Platform activity recorded for this account."
+          : "No platform activity recorded for this account yet.",
+        checked_at: historyData?.history?.[0]?.occurredAt ?? new Date().toISOString(),
       },
       {
         label: "Timely record updates",
-        status: "fail", points: 0, max: 2,
+        status: hasHistory ? "pass" : "fail",
+        points: hasHistory ? 2 : 0,
+        max: 2,
         source: "Platform logic", source_type: "internal_logic",
-        detail: "Financial records have not been updated.",
-        checked_at: "2026-04-06T08:00:00Z",
+        detail: hasHistory ? "Financial records have been updated recently." : "Financial records have not been updated.",
+        checked_at: new Date().toISOString(),
       },
       {
         label: "No long-unresolved alerts",
-        status: "fail", points: 0, max: 1,
+        status: openAlerts.length === 0 ? "pass" : "fail",
+        points: openAlerts.length === 0 ? 1 : 0,
+        max: 1,
         source: "Platform logic", source_type: "internal_logic",
-        detail: "Open compliance alerts need to be resolved.",
-        checked_at: "2026-04-06T08:00:00Z",
+        detail: openAlerts.length === 0
+          ? "All compliance alerts have been resolved."
+          : `${openAlerts.length} open compliance alert(s) need to be resolved.`,
+        checked_at: new Date().toISOString(),
       },
     ],
-  },
-};
+  };
+
+  return { identity, registration, tax, financial, risk, documents, behaviour };
+}
+
+// ── Maps KycStatus (API shape) → Partial<KYCData> (form shape) ───────────────
+function kycStatusToFormData(s: NonNullable<ReturnType<typeof useGetKycStatusQuery>["data"]>): import("@/types/compliance").KYCData {
+  const idTypeMap: Record<string, import("@/types/compliance").KYCData["id_type"]> = {
+    Passport:       "passport",
+    DriversLicence: "drivers_licence",
+    NationalId:     "national_id",
+  };
+  return {
+    full_name:       s.fullName ?? "",
+    dob:             s.dateOfBirth ?? "",
+    nationality:     s.nationality ?? "",
+    phone_number:    s.phoneNumber ?? "",
+    email:           s.email ?? "",
+    address:         s.residentialAddress ?? "",
+    city:            "",
+    postcode:        "",
+    country:         "uk",
+    id_type:         s.idType ? (idTypeMap[s.idType] ?? "passport") : "passport",
+    id_number:       s.idNumber ?? "",
+    id_expiry:       s.idExpiryDate ?? "",
+    id_document_url: s.idDocumentUrl ?? "",
+  };
+}
 
 const SECTION_KEYS = [
   "identity", "registration", "tax", "financial", "risk", "documents", "behaviour",
 ] as const;
 
-// Maps API task category → ActionItem fields
 function mapCategory(category: string): Pick<ActionItem, "action_type" | "section"> {
   switch (category) {
     case "KYC":       return { action_type: "review",  section: "identity"  };
@@ -298,27 +464,49 @@ function mapCategory(category: string): Pick<ActionItem, "action_type" | "sectio
 
 export default function CompliancePage() {
   const router = useRouter();
-  const { data: centreData } = useGetComplianceCentreDashboardQuery();
-  const { data: amlData, isLoading: amlLoading } = useGetAmlReportQuery();
-  const { data: documentsData, isLoading: documentsLoading } = useGetComplianceDocumentsQuery();
-  const [submitKyc] = useSubmitKycMutation();
-  const [reviewAml] = useReviewAmlMutation();
   const { toast } = useToast();
 
-  const [openSectionKey, setOpenSectionKey] = useState<string | null>(null);
-  const [requestReviewOpen, setRequestReviewOpen] = useState(false);
-  const [kycOpen, setKycOpen] = useState(false);
-  const [passportOpen, setPassportOpen] = useState(false);
-  const [passport, setPassport] = useState<CompliancePassport | undefined>(undefined);
-  const [uploadOpen, setUploadOpen] = useState(false);
-  const [uploadDocType, setUploadDocType] = useState("");
-  const [connectOpen, setConnectOpen] = useState(false);
-  const [connectDefaultTab, setConnectDefaultTab] = useState<"bank" | "tax">("bank");
-  const [fixOpen, setFixOpen] = useState(false);
-  const [fixType, setFixType] = useState<FixType>("reconcile");
-  const [amlReportData, setAmlReportData] = useState<AmlReport | null>(null);
+  // ── All compliance centre queries ──────────────────────────────────────────
+  const { data: centreData }      = useGetComplianceCentreDashboardQuery();
+  const { data: evaluateData }    = useEvaluateComplianceQuery();
+  const { data: kycStatus }       = useGetKycStatusQuery();
+  const { data: financialStatus } = useGetFinancialStatusQuery();
+  const { data: amlData }         = useGetAmlReportQuery();
+  const { data: documentsData }   = useGetComplianceDocumentsQuery();
+  const { data: alertsData }      = useGetComplianceAlertsQuery();
+  const { data: historyData }     = useGetOperatingHistoryQuery();
 
-  // Map API icon keys → section card keys
+  const [submitKycMultiEntry] = useSubmitKycMultiEntryMutation();
+
+  // ── Passport charge pricing (in pence for GBP, kobo for NGN) ────────────────
+  const compliancePriceGBP = 29.99;  // £29.99
+  const compliancePriceNGN = 15000;  // ₦15,000
+  
+  const [userEmail, setUserEmail] = useState("");
+  const [userId, setUserId] = useState<number | undefined>(undefined);
+
+  // ── Retrieve user credentials from localStorage ─────────────────────────────
+  useEffect(() => {
+    const email = localStorage.getItem("auth_user_email") || "";
+    const id = getAuthUserId();
+    setUserEmail(email);
+    setUserId(id ?? undefined);
+  }, []);
+
+  // ── Sheet state ────────────────────────────────────────────────────────────
+  const [openSectionKey, setOpenSectionKey]       = useState<string | null>(null);
+  const [requestReviewOpen, setRequestReviewOpen] = useState(false);
+  const [kycOpen, setKycOpen]                     = useState(false);
+  const [passportOpen, setPassportOpen]           = useState(false);
+  const [passport, setPassport]                   = useState<CompliancePassport | undefined>(undefined);
+  const [uploadOpen, setUploadOpen]               = useState(false);
+  const [uploadDocType, setUploadDocType]         = useState("");
+  const [connectOpen, setConnectOpen]             = useState(false);
+  const [connectDefaultTab, setConnectDefaultTab] = useState<"bank" | "tax">("bank");
+  const [fixOpen, setFixOpen]                     = useState(false);
+  const [fixType, setFixType]                     = useState<FixType>("reconcile");
+
+  // ── Map API icon keys → section card keys ─────────────────────────────────
   const ICON_TO_KEY: Record<string, keyof ComplianceBreakdown> = {
     kyc:     "identity",
     kyb:     "registration",
@@ -329,21 +517,23 @@ export default function CompliancePage() {
     history: "behaviour",
   };
 
-  // Build a lookup from section key → API section for the cards
   const apiSectionMap: Partial<Record<keyof ComplianceBreakdown, ComplianceSectionBreakdown>> = {};
   (centreData?.scoreBreakdown ?? []).forEach((s) => {
     const key = ICON_TO_KEY[s.icon];
     if (key) apiSectionMap[key] = s;
   });
 
-  // Overall score = average of section scores (all maxScores are 100)
-  const scoreBreakdown = centreData?.scoreBreakdown ?? [];
-  const totalScore = scoreBreakdown.length > 0
-    ? Math.round(scoreBreakdown.reduce((sum, s) => sum + (s.score ?? 0), 0) / scoreBreakdown.length)
-    : 0;
+  // ── Overall score from evaluate endpoint ──────────────────────────────────
+  const totalScore = evaluateData?.overallScore ?? 0;
+  const lastEvaluated = evaluateData?.lastEvaluated ?? centreData?.lastUpdated ?? new Date().toISOString();
 
-  const manualReviewRequired = false; // would be driven by backend flags
+  // ── Build real breakdown from all API data ────────────────────────────────
+  const breakdown = useMemo(
+    () => buildBreakdown(evaluateData, amlData, documentsData, financialStatus, alertsData, historyData),
+    [evaluateData, amlData, documentsData, financialStatus, alertsData, historyData],
+  );
 
+  // ── Action queue from dashboard tasks ─────────────────────────────────────
   const actionItems: ActionItem[] = (centreData?.tasks ?? [])
     .filter((t) => t.status !== "Completed")
     .map((t) => ({
@@ -353,90 +543,6 @@ export default function CompliancePage() {
       priority: t.priority.toLowerCase() as "high" | "medium" | "low",
       ...mapCategory(t.category),
     }));
-
-  // Merge mock breakdown with real AML and Documents data when available
-  const breakdown = (() => {
-    let updated = { ...MOCK_BREAKDOWN };
-
-    // Update with AML data
-    if (amlData) {
-      updated = {
-        ...updated,
-        risk: {
-          ...updated.risk,
-          earned: amlData.amlScreeningStatus === "All Clear" ? 15 : 0,
-          missing: amlData.amlScreeningStatus === "All Clear" ? [] : ["AML / sanctions screening not yet completed (0/15)"],
-          checks: [
-            {
-              label: "Sanctions screening clear",
-              status: amlData.sanctionsScreeningStatus === "Clear" ? "pass" : "pending",
-              points: amlData.sanctionsScreeningStatus === "Clear" ? 5 : 0,
-              max: 5,
-              source: "Sumsub",
-              source_type: "api" as const,
-              detail: amlData.sanctionsScreeningStatus === "Clear"
-                ? "No matches found across OFAC, UN, EU, and UK sanctions lists."
-                : "No matches found across OFAC, UN, EU, and UK sanctions lists.",
-              checked_at: amlData.lastScannedAt || new Date().toISOString(),
-            },
-            {
-              label: "PEP check clear",
-              status: !amlData.hasPepFlags ? "pass" : "pending",
-              points: !amlData.hasPepFlags ? 5 : 0,
-              max: 5,
-              source: "Sumsub",
-              source_type: "api" as const,
-              detail: !amlData.hasPepFlags
-                ? "Not identified as a Politically Exposed Person or close associate."
-                : "PEP check runs automatically when KYC verification is complete.",
-              checked_at: amlData.lastScannedAt || new Date().toISOString(),
-            },
-            {
-              label: "Adverse media check clear",
-              status: amlData.adverseMediaStatus === "Clear" ? "pass" : "pending",
-              points: amlData.adverseMediaStatus === "Clear" ? 5 : 0,
-              max: 5,
-              source: "Sumsub",
-              source_type: "api" as const,
-              detail: amlData.adverseMediaStatus === "Clear"
-                ? "No relevant adverse media results from global news database scan."
-                : "Adverse media check runs automatically when KYC verification is complete.",
-              checked_at: amlData.lastScannedAt || new Date().toISOString(),
-            },
-          ],
-        },
-      };
-    }
-
-    // Update with Documents data
-    if (documentsData?.documents && documentsData.documents.length > 0) {
-      const docs = documentsData.documents;
-      const uploadedDocCount = docs.filter(d => d.status === "Verified" || d.status === "InProgress").length;
-      const earnedPoints = Math.min(uploadedDocCount * 3, 10);
-      
-      updated = {
-        ...updated,
-        documents: {
-          ...updated.documents,
-          earned: earnedPoints,
-          passed: docs.filter(d => d.status === "Verified").map(d => `${d.documentType}: ${d.fileName}`),
-          missing: uploadedDocCount > 0 ? [] : [],
-          checks: docs.map((doc, idx) => ({
-            label: `${doc.documentType}: ${doc.fileName}`,
-            status: doc.status === "Verified" ? "pass" : "review",
-            points: doc.status === "Verified" ? 3 : 1,
-            max: 3,
-            source: "User submitted",
-            source_type: "user_input" as const,
-            detail: `Status: ${doc.status} · Uploaded: ${new Date(doc.uploadedAt).toLocaleDateString("en-GB")} · Size: ${(doc.fileSizeBytes / 1024).toFixed(2)} KB`,
-            checked_at: doc.uploadedAt,
-          })),
-        },
-      };
-    }
-
-    return updated;
-  })();
 
   const handleAction = (item: ActionItem) => {
     setOpenSectionKey(item.section);
@@ -471,18 +577,7 @@ export default function CompliancePage() {
     if (fixType === "financial_setup") { setConnectDefaultTab("bank"); setConnectOpen(true); return; }
 
     // AML / Risk
-    if (fixType === "alerts_review") {
-      if (amlData) {
-        setAmlReportData(amlData);
-      }
-      setFixType("alerts_review");
-      setFixOpen(true);
-      return;
-    }
-    if (fixType === "aml_review") {
-      if (amlData) {
-        setAmlReportData(amlData);
-      }
+    if (fixType === "alerts_review" || fixType === "aml_review") {
       setFixType("alerts_review");
       setFixOpen(true);
       return;
@@ -497,33 +592,40 @@ export default function CompliancePage() {
     if (fixType === "alerts") { setFixType("alerts"); setFixOpen(true); return; }
     if (fixType === "record_updates") { setFixType("record_updates"); setFixOpen(true); return; }
 
-    // Fallback: section-based actions for footer button
+    // Fallback: section-based actions
     switch (sectionKey) {
-      case "identity":     setKycOpen(true);                                             break;
-      case "registration": setFixType("name_match");   setFixOpen(true);                 break;
-      case "tax":          setConnectDefaultTab("tax"); setConnectOpen(true);            break;
-      case "financial":    setConnectDefaultTab("bank"); setConnectOpen(true);           break;
-      case "risk":         setFixType("alerts_review"); setFixOpen(true);                break;
-      case "documents":    setUploadDocType("");        setUploadOpen(true);             break;
-      case "behaviour":    setFixType("alerts");        setFixOpen(true);                break;
+      case "identity":     setKycOpen(true);                                              break;
+      case "registration": setFixType("name_match");    setFixOpen(true);                 break;
+      case "tax":          setConnectDefaultTab("tax");  setConnectOpen(true);             break;
+      case "financial":    setConnectDefaultTab("bank"); setConnectOpen(true);             break;
+      case "risk":         setFixType("alerts_review");  setFixOpen(true);                 break;
+      case "documents":    setUploadDocType("");         setUploadOpen(true);              break;
+      case "behaviour":    setFixType("alerts");         setFixOpen(true);                 break;
     }
   };
 
+  // ── KYC submit — uses multi-entry endpoint ─────────────────────────────────
   const handleKYCSubmit = async (data: KYCData) => {
     try {
-      await submitKyc({
-        fullName: data.full_name,
-        dateOfBirth: data.dob,
-        nationality: data.nationality,
-        phoneNumber: data.phone_number,
-        email: data.email,
-        residentialAddress: [data.address, data.city, data.postcode].filter(Boolean).join(", "),
-        idType: data.id_type === "passport" ? "Passport"
-              : data.id_type === "drivers_licence" ? "DriversLicence"
-              : "NationalId",
-        idNumber: data.id_number,
+      const personalInfo = [{
+        fullName:            data.full_name,
+        dateOfBirth:         data.dob,
+        nationality:         data.nationality,
+        phoneNumber:         data.phone_number,
+        email:               data.email,
+        residentialAddress:  [data.address, data.city, data.postcode].filter(Boolean).join(", "),
+      }];
+      const govIds = [{
+        idType:       data.id_type === "passport"        ? "Passport"
+                    : data.id_type === "drivers_licence" ? "DriversLicence"
+                    : "NationalId",
+        idNumber:     data.id_number,
         idExpiryDate: data.id_expiry,
         idDocumentUrl: data.id_document_url || "",
+      }];
+      await submitKycMultiEntry({
+        personalInformationJson: JSON.stringify(personalInfo),
+        governmentIssuedIdsJson:  JSON.stringify(govIds),
       }).unwrap();
       toast({ title: "KYC submitted successfully", variant: "success" });
     } catch {
@@ -544,10 +646,6 @@ export default function CompliancePage() {
     return p;
   };
 
-  const handleDownload = () => {
-    setPassportOpen(true);
-  };
-
   return (
     <div className="p-5 md:p-8 text-white">
       <div className="max-w-5xl mx-auto">
@@ -561,9 +659,9 @@ export default function CompliancePage() {
         {/* Top banner — score + 3 buttons */}
         <TopBanner
           score={totalScore}
-          lastUpdated="2026-04-06T08:00:00Z"
-          manualReviewRequired={manualReviewRequired}
-          onDownload={handleDownload}
+          lastUpdated={lastEvaluated}
+          manualReviewRequired={false}
+          onDownload={() => setPassportOpen(true)}
           onRequestReview={() => setRequestReviewOpen(true)}
           onApplyFixes={() => document.getElementById("action-queue")?.scrollIntoView({ behavior: "smooth" })}
         />
@@ -586,6 +684,8 @@ export default function CompliancePage() {
                 onAction={(fixType) => handleSectionAction(key, fixType)}
                 externalOpen={openSectionKey === key}
                 onExternalClose={() => setOpenSectionKey(null)}
+                financialStatus={financialStatus}
+                historyData={historyData}
               />
             ))}
           </div>
@@ -593,17 +693,14 @@ export default function CompliancePage() {
 
         {/* Action queue */}
         <div id="action-queue" className="mb-8">
-          <ActionQueue
-            items={actionItems}
-            onAction={handleAction}
-          />
+          <ActionQueue items={actionItems} onAction={handleAction} />
         </div>
 
         {/* Sheets */}
         <KYCSheet
           isOpen={kycOpen}
           onClose={() => setKycOpen(false)}
-          existingData={undefined}
+          existingData={kycStatus ? kycStatusToFormData(kycStatus) : undefined}
           onSubmit={handleKYCSubmit}
         />
 
@@ -614,6 +711,10 @@ export default function CompliancePage() {
           companyName="Apex Solutions Ltd"
           onGenerate={handleGeneratePassport}
           onDownload={() => {}}
+          compliancePriceNGN={compliancePriceNGN}
+          compliancePriceGBP={compliancePriceGBP}
+          userEmail={userEmail}
+          userId={userId}
         />
 
         <UploadDocumentSheet
@@ -626,12 +727,16 @@ export default function CompliancePage() {
           isOpen={connectOpen}
           onClose={() => setConnectOpen(false)}
           defaultTab={connectDefaultTab}
+          financialStatus={financialStatus}
         />
 
         <FixActionSheet
           isOpen={fixOpen}
           onClose={() => setFixOpen(false)}
           fixType={fixType}
+          alerts={alertsData?.alerts}
+          amlData={amlData}
+          historyData={historyData}
         />
 
         <ConfirmDialog

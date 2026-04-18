@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { SystemSheet } from "@/components/shared/system-sheet";
 import { CompliancePassport } from "@/types/compliance";
 import { Download, Share2, CheckCircle2, ShieldCheck, FileCheck, Loader2 } from "lucide-react";
+import { PaymentModal } from "./payment-modal";
 
 const BRAND = { primary: "#0A2463", gold: "#D4AF37", green: "#06D6A0", accent: "#3E92CC", muted: "#6B7280" };
 
@@ -14,13 +15,44 @@ interface PassportSheetProps {
   companyName: string;
   onGenerate: () => Promise<CompliancePassport>;
   onDownload: () => void;
+  compliancePriceNGN?: number;
+  compliancePriceGBP?: number;
+  userEmail?: string;
+  userId?: number;
 }
 
 export function PassportSheet({
-  isOpen, onClose, passport, companyName, onGenerate, onDownload,
+  isOpen,
+  onClose,
+  passport,
+  companyName,
+  onGenerate,
+  onDownload,
+  compliancePriceNGN = 5000,
+  compliancePriceGBP = 29.99,
+  userEmail = "user@example.com",
+  userId = 0,
 }: PassportSheetProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [localPassport, setLocalPassport] = useState<CompliancePassport | undefined>(passport);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+
+  const handleGenerateClick = () => {
+    if (compliancePriceNGN && compliancePriceGBP && userEmail && userId) {
+      setPaymentModalOpen(true);
+    }
+  };
+
+  const handlePaymentSuccess = async (reference: string, jurisdiction: "GB" | "NG") => {
+    setPaymentModalOpen(false);
+    setIsGenerating(true);
+    try {
+      const p = await onGenerate();
+      setLocalPassport(p);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   const handleGenerate = async () => {
     setIsGenerating(true);
@@ -57,7 +89,7 @@ export function PassportSheet({
   ) : (
     <button
       type="button"
-      onClick={handleGenerate}
+      onClick={handleGenerateClick}
       disabled={isGenerating}
       className="w-full h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200"
       style={{ backgroundColor: BRAND.gold, color: BRAND.primary }}
@@ -71,13 +103,23 @@ export function PassportSheet({
   );
 
   return (
-    <SystemSheet
-      open={isOpen}
-      onClose={onClose}
-      title="Compliance Passport"
-      description="Your digital compliance certificate — downloadable and shareable"
-      footer={footer}
-    >
+    <>
+      <PaymentModal
+        isOpen={paymentModalOpen}
+        onClose={() => setPaymentModalOpen(false)}
+        compliancePriceNGN={compliancePriceNGN}
+        compliancePriceGBP={compliancePriceGBP}
+        onPaymentSuccess={handlePaymentSuccess}
+        userEmail={userEmail}
+        userId={userId}
+      />
+      <SystemSheet
+        open={isOpen}
+        onClose={onClose}
+        title="Compliance Passport"
+        description="Your digital compliance certificate — downloadable and shareable"
+        footer={footer}
+      >
       <button
         type="button"
         onClick={onClose}
@@ -235,6 +277,7 @@ export function PassportSheet({
           </div>
         </div>
       )}
-    </SystemSheet>
+      </SystemSheet>
+    </>
   );
 }

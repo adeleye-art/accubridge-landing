@@ -3,6 +3,8 @@
 import React, { useState, useRef } from "react";
 import { SystemSheet } from "@/components/shared/system-sheet";
 import { Upload, FileText, CheckCircle2, Loader2, Check, X } from "lucide-react";
+import { useUploadComplianceDocumentMutation } from "@/lib/api/complianceCentreApi";
+import { useToast } from "@/components/shared/toast";
 
 const BRAND = { primary: "#0A2463", gold: "#D4AF37", green: "#06D6A0", accent: "#3E92CC", muted: "#6B7280" };
 
@@ -20,9 +22,9 @@ const DOC_TYPES = [
 ];
 
 interface UploadedFile {
+  file: File;
   name: string;
   size: number;
-  type: string;
 }
 
 interface UploadDocumentSheetProps {
@@ -50,18 +52,34 @@ export function UploadDocumentSheet({
   const addFiles = (incoming: FileList | null) => {
     if (!incoming) return;
     const next: UploadedFile[] = Array.from(incoming).map((f) => ({
-      name: f.name, size: f.size, type: f.type,
+      file: f, name: f.name, size: f.size,
     }));
     setFiles((prev) => [...prev, ...next].slice(0, 5));
   };
 
   const removeFile = (i: number) => setFiles((prev) => prev.filter((_, idx) => idx !== i));
 
+  const [uploadDoc] = useUploadComplianceDocumentMutation();
+  const { toast } = useToast();
+
   const handleUpload = async () => {
     if (!docType || files.length === 0) return;
     setStep("uploading");
-    await new Promise((res) => setTimeout(res, 1800));
-    setStep("success");
+    try {
+      for (const f of files) {
+        await uploadDoc({
+          documentType: docType,
+          file: f.file,
+          fileName: f.name,
+          fileSizeBytes: f.size,
+          notes: notes || undefined,
+        }).unwrap();
+      }
+      setStep("success");
+    } catch {
+      setStep("form");
+      toast({ title: "Upload failed. Please try again.", variant: "error" });
+    }
   };
 
   const handleClose = () => {

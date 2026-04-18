@@ -9,7 +9,10 @@ import {
 import { SectionScore, EvidenceCheck } from "@/types/compliance";
 import { getSectionHex } from "@/lib/compliance/calculate-score";
 import { SystemSheet } from "@/components/shared/system-sheet";
-import { ComplianceSectionBreakdown, useGetKycStatusQuery, useGetKybStatusQuery } from "@/lib/api/complianceCentreApi";
+import {
+  ComplianceSectionBreakdown, useGetKycStatusQuery, useGetKybStatusQuery,
+  FinancialRecordStatus, OperatingHistoryResponse,
+} from "@/lib/api/complianceCentreApi";
 
 const BRAND = { primary: "#0A2463", gold: "#D4AF37", green: "#06D6A0", accent: "#3E92CC", muted: "#6B7280" };
 
@@ -206,9 +209,11 @@ interface SectionCardProps {
   apiSection?: ComplianceSectionBreakdown;
   externalOpen?: boolean;
   onExternalClose?: () => void;
+  financialStatus?: FinancialRecordStatus;
+  historyData?: OperatingHistoryResponse;
 }
 
-export function SectionCard({ sectionKey, section, onAction, apiSection, externalOpen, onExternalClose }: SectionCardProps) {
+export function SectionCard({ sectionKey, section, onAction, apiSection, externalOpen, onExternalClose, financialStatus, historyData }: SectionCardProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showIdentityDetails, setShowIdentityDetails] = useState(false);
   
@@ -439,8 +444,6 @@ export function SectionCard({ sectionKey, section, onAction, apiSection, externa
             </div>
           ) : (
             <>
-          {/* Score summary - REMOVED entirely */}
-
           {/* Passed / Missing summary */}
           {(section.passed.length > 0 || section.missing.length > 0) && (
             <div className="grid grid-cols-2 gap-3">
@@ -472,6 +475,92 @@ export function SectionCard({ sectionKey, section, onAction, apiSection, externa
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Financial: live connection status panel */}
+          {sectionKey === "financial" && financialStatus && (
+            <div className="flex flex-col gap-2">
+              <div className="text-xs font-semibold uppercase tracking-widest" style={{ color: BRAND.muted }}>Connection Status</div>
+              {[
+                {
+                  label: financialStatus.bankProvider ?? "Bank Account",
+                  connected: financialStatus.isBankConnected,
+                  connectedAt: financialStatus.bankConnectedAt,
+                  syncActive: financialStatus.bankSyncActive,
+                },
+                {
+                  label: financialStatus.taxProvider ?? "Tax / VAT",
+                  connected: financialStatus.isTaxConnected,
+                  connectedAt: financialStatus.taxConnectedAt,
+                  syncActive: financialStatus.taxSyncActive,
+                },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  className="rounded-xl border p-3 flex items-center justify-between gap-3"
+                  style={{
+                    backgroundColor: item.connected ? `${BRAND.green}06` : "rgba(255,255,255,0.03)",
+                    borderColor: item.connected ? `${BRAND.green}20` : "rgba(255,255,255,0.08)",
+                  }}
+                >
+                  <div>
+                    <div className="text-sm font-semibold text-white">{item.label}</div>
+                    {item.connected && item.connectedAt && (
+                      <div className="text-[11px] mt-0.5" style={{ color: "rgba(255,255,255,0.45)" }}>
+                        Connected {new Date(item.connectedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                        {item.syncActive ? " · Sync active" : " · Sync inactive"}
+                      </div>
+                    )}
+                  </div>
+                  <span
+                    className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0"
+                    style={{
+                      backgroundColor: item.connected ? `${BRAND.green}15` : "rgba(107,114,128,0.15)",
+                      color: item.connected ? BRAND.green : BRAND.muted,
+                    }}
+                  >
+                    {item.connected ? "Connected" : "Not Connected"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Behaviour: operating history timeline */}
+          {sectionKey === "behaviour" && (historyData?.history?.length ?? 0) > 0 && (
+            <div className="flex flex-col gap-2">
+              <div className="text-xs font-semibold uppercase tracking-widest" style={{ color: BRAND.muted }}>Operating History</div>
+              <div className="flex flex-col gap-2">
+                {(historyData?.history ?? []).slice(0, 5).map((item) => (
+                  <div
+                    key={item.id}
+                    className="rounded-xl border p-3 flex items-start gap-3"
+                    style={{
+                      backgroundColor: item.isPenalty ? "rgba(239,68,68,0.05)" : "rgba(255,255,255,0.03)",
+                      borderColor: item.isPenalty ? "rgba(239,68,68,0.18)" : "rgba(255,255,255,0.07)",
+                    }}
+                  >
+                    <div
+                      className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
+                      style={{ backgroundColor: item.isPenalty ? "rgba(239,68,68,0.15)" : `${BRAND.green}15` }}
+                    >
+                      {item.isPenalty
+                        ? <XCircle size={12} style={{ color: "#ef4444" }} />
+                        : <CheckCircle2 size={12} style={{ color: BRAND.green }} />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-white">{item.title}</div>
+                      {item.description && (
+                        <div className="text-[11px] mt-0.5 leading-relaxed" style={{ color: "rgba(255,255,255,0.45)" }}>{item.description}</div>
+                      )}
+                      <div className="text-[10px] mt-1" style={{ color: "rgba(255,255,255,0.25)" }}>
+                        {new Date(item.occurredAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
             </>
