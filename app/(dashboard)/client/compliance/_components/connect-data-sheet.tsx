@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { SystemSheet } from "@/components/shared/system-sheet";
 import { Link2, CheckCircle2, Loader2, Building, Calculator, ExternalLink } from "lucide-react";
 import { useConnectBankMutation, useConnectTaxMutation, FinancialRecordStatus } from "@/lib/api/complianceCentreApi";
+import { useLazyGetHmrcAuthorizeUrlQuery } from "@/lib/api/hmrcApi";
 import { useToast } from "@/components/shared/toast";
 
 const BRAND = { primary: "#0A2463", gold: "#D4AF37", green: "#06D6A0", accent: "#3E92CC", muted: "#6B7280" };
@@ -31,6 +32,8 @@ export function ConnectDataSheet({ isOpen, onClose, defaultTab = "bank", financi
   const [tab, setTab]             = useState<TabKey>(defaultTab);
   const [connecting, setConnecting] = useState<string | null>(null);
   const [connected, setConnected]   = useState<string[]>([]);
+  // VAT number for HMRC/FIRS tax connections (optional)
+  const [vatNumber, setVatNumber] = useState("");
 
   // Seed connected state from real API status whenever the sheet opens
   useEffect(() => {
@@ -52,6 +55,7 @@ export function ConnectDataSheet({ isOpen, onClose, defaultTab = "bank", financi
   const { toast } = useToast();
   const [connectBank] = useConnectBankMutation();
   const [connectTax]  = useConnectTaxMutation();
+  const [triggerGetHmrcAuthorizeUrl] = useLazyGetHmrcAuthorizeUrlQuery();
 
   const handleConnect = async (id: string) => {
     const bankProvider = BANK_PROVIDERS.find((p) => p.id === id);
@@ -63,11 +67,31 @@ export function ConnectDataSheet({ isOpen, onClose, defaultTab = "bank", financi
     try {
       if (tab === "bank" && bankProvider) {
         await connectBank({ provider: bankProvider.provider, jurisdiction: bankProvider.jurisdiction }).unwrap();
+        setConnected((prev) => [...prev, id]);
+        toast({ title: `${providerInfo.name} connected successfully`, variant: "success" });
       } else if (tab === "tax" && taxProvider) {
-        await connectTax({ provider: taxProvider.provider, jurisdiction: taxProvider.jurisdiction }).unwrap();
+        if (taxProvider.provider === "HMRC") {
+          // Real HMRC OAuth redirect
+          const state = btoa(JSON.stringify({
+            redirectTo: "/hmrc/callback",
+            vatNumber: vatNumber.trim() || null,
+            nonce: Math.random().toString(36).slice(2),
+          }));
+          const { authorizationUrl } = await triggerGetHmrcAuthorizeUrl(state).unwrap();
+          window.location.href = authorizationUrl;
+          // Navigating away — don't update state
+          return;
+        } else {
+          // FIRS: direct POST
+          await connectTax({
+            provider: taxProvider.provider,
+            jurisdiction: taxProvider.jurisdiction,
+            vatNumber: vatNumber.trim() || undefined,
+          }).unwrap();
+          setConnected((prev) => [...prev, id]);
+          toast({ title: `${providerInfo.name} connected successfully`, variant: "success" });
+        }
       }
-      setConnected((prev) => [...prev, id]);
-      toast({ title: `${providerInfo.name} connected successfully`, variant: "success" });
     } catch {
       toast({ title: `Failed to connect ${providerInfo.name}`, variant: "error" });
     } finally {
@@ -127,6 +151,25 @@ export function ConnectDataSheet({ isOpen, onClose, defaultTab = "bank", financi
             ? "🔒 Bank connections use read-only access via Open Banking. AccuBridge cannot make payments or transfers. Connection is revocable at any time."
             : "🔒 Tax connections use OAuth authorisation. AccuBridge reads obligation data only — no filing or payment actions are taken on your behalf."}
         </div>
+
+        {/* VAT number input — shown only on Tax tab */}
+        {tab === "tax" && (
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: BRAND.muted }}>
+              VAT Number <span style={{ color: BRAND.muted, fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional)</span>
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. GB123456789"
+              value={vatNumber}
+              onChange={(e) => setVatNumber(e.target.value)}
+              className="w-full h-10 px-4 rounded-xl text-sm text-white border outline-none transition-all duration-200 placeholder-[#6B7280]"
+              style={{ backgroundColor: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.1)" }}
+              onFocus={(e) => { e.target.style.borderColor = "rgba(62,146,204,0.6)"; }}
+              onBlur={(e) => { e.target.style.borderColor = "rgba(255,255,255,0.1)"; }}
+            />
+          </div>
+        )}
 
         {/* Provider cards */}
         <div className="flex flex-col gap-3">

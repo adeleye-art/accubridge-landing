@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useMemo, useState, useEffect, Suspense, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getAuthUserId } from "@/lib/auth";
 import { PageHeader } from "@/components/shared/page-header";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -33,6 +33,34 @@ import {
   OperatingHistoryResponse,
 } from "@/lib/api/complianceCentreApi";
 import { useToast } from "@/components/shared/toast";
+
+// ── HMRC result toast — reads ?hmrc= param set by the callback page ──────────
+function HmrcResultHandler() {
+  const params  = useSearchParams();
+  const router  = useRouter();
+  const { toast } = useToast();
+  const handled = useRef(false);
+
+  useEffect(() => {
+    if (handled.current) return;
+    const hmrc = params.get("hmrc");
+    if (!hmrc) return;
+    handled.current = true;
+
+    if (hmrc === "connected") {
+      toast({ title: "HMRC connected successfully. VAT obligations will sync shortly.", variant: "success" });
+    } else if (hmrc === "error") {
+      toast({ title: "HMRC connection failed. Please try connecting again.", variant: "error" });
+    }
+
+    // Strip the query param without a full navigation
+    const url = new URL(window.location.href);
+    url.searchParams.delete("hmrc");
+    router.replace(url.pathname + (url.search || ""));
+  }, [params, router, toast]);
+
+  return null;
+}
 
 // ── Fallback baseline structure — used when evaluate data is absent ──────────
 function buildFallbackSection(max: number, actionLabel: string, actionType: SectionScore["action_type"]): SectionScore {
@@ -663,6 +691,11 @@ export default function CompliancePage() {
 
   return (
     <div className="p-5 md:p-8 text-white">
+      {/* Detects ?hmrc=connected|error set by /hmrc/callback and shows a toast */}
+      <Suspense fallback={null}>
+        <HmrcResultHandler />
+      </Suspense>
+
       <div className="max-w-5xl mx-auto">
 
         <PageHeader

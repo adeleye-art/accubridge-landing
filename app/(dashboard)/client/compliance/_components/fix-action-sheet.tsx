@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { SystemSheet } from "@/components/shared/system-sheet";
 import {
   CheckCircle2, Loader2, Check, AlertCircle, RefreshCw,
-  Upload, ShieldCheck, FileText, Plus, Trash2, Link2, X,
+  Upload, ShieldCheck, FileText, Plus, Trash2, Link2, X, Search,
 } from "lucide-react";
 import {
   useSubmitKybMultiEntryMutation,
@@ -18,6 +18,12 @@ import {
   AmlReport,
   OperatingHistoryResponse,
 } from "@/lib/api/complianceCentreApi";
+import {
+  useLazySearchCompaniesQuery,
+  useLazyGetCompanyOfficersQuery,
+  CompanySearchItem,
+} from "@/lib/api/companiesHouseApi";
+import { useLazyGetHmrcAuthorizeUrlQuery } from "@/lib/api/hmrcApi";
 import { useToast } from "@/components/shared/toast";
 
 const BRAND = { primary: "#0A2463", gold: "#D4AF37", green: "#06D6A0", accent: "#3E92CC", muted: "#6B7280" };
@@ -113,6 +119,68 @@ function KYBForm({ onSubmit }: { onSubmit: (data: KYBFormData) => void }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Companies House search state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<CompanySearchItem[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const [triggerSearch] = useLazySearchCompaniesQuery();
+  const [triggerGetOfficers] = useLazyGetCompanyOfficersQuery();
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Debounced search — only fires for UK when ≥3 chars
+  useEffect(() => {
+    if (country !== "uk" || searchQuery.length < 3) {
+      setSearchResults([]);
+      setShowDropdown(false);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const result = await triggerSearch(searchQuery).unwrap();
+        setSearchResults(result.items ?? []);
+        setShowDropdown((result.items?.length ?? 0) > 0);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery, country, triggerSearch]);
+
+  const handleSelectCompany = async (item: CompanySearchItem) => {
+    setRegNumber(item.companyNumber);
+    setLegalName(item.companyName);
+    setSearchQuery(item.companyName);
+    setShowDropdown(false);
+    setSearchResults([]);
+    // Pre-fill directors from Companies House officers (best-effort)
+    try {
+      const officersResult = await triggerGetOfficers(item.companyNumber).unwrap();
+      if (officersResult.officers?.length > 0) {
+        setDirectors(
+          officersResult.officers.map((o, i) => ({ id: `d${i}`, name: o.name }))
+        );
+      }
+    } catch {
+      // Non-critical — leave directors as-is
+    }
+  };
+
   const addDirector = () => {
     setDirectors((prev) => [...prev, { id: `d${Date.now()}`, name: "" }]);
   };
@@ -160,7 +228,7 @@ function KYBForm({ onSubmit }: { onSubmit: (data: KYBFormData) => void }) {
             <button
               key={val}
               type="button"
-              onClick={() => setCountry(val)}
+              onClick={() => { setCountry(val); setSearchQuery(""); setRegNumber(""); setLegalName(""); setSearchResults([]); setShowDropdown(false); }}
               className="rounded-xl border p-4 flex flex-col gap-1 transition-all duration-200 text-left"
               style={{
                 backgroundColor: country === val ? `${BRAND.accent}12` : "rgba(255,255,255,0.04)",
@@ -175,21 +243,110 @@ function KYBForm({ onSubmit }: { onSubmit: (data: KYBFormData) => void }) {
         </div>
       </div>
 
-      {/* Registration number */}
+      {/* Registration number — searchable combobox for UK, plain input for NG */}
       <div className="flex flex-col gap-1.5">
         <FieldLabel required>
           {country === "uk" ? "Companies House Number" : "CAC Registration Number"}
         </FieldLabel>
-        <input
-          type="text"
-          placeholder={country === "uk" ? "e.g. 15234789" : "e.g. RC-1234567"}
-          value={regNumber}
-          onChange={(e) => setRegNumber(e.target.value)}
-          className={inputBase}
-          style={{ ...inputStyle, borderColor: errors.regNumber ? "#ef4444" : "rgba(255,255,255,0.1)" }}
-          onFocus={onFocusIn}
-          onBlur={onFocusOut}
-        />
+
+        {country === "uk" ? (
+          <div className="relative" ref={dropdownRef}>
+            {/* Search input */}
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search by company name or number (min. 3 chars)"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  // If user clears the field, also clear selected value
+                  if (!e.target.value) { setRegNumber(""); setLegalName(""); }
+                }}
+                className={inputBase}
+                style={{
+                  ...inputStyle,
+                  paddingLeft: "2.75rem",
+                  borderColor: errors.regNumber ? "#ef4444" : "rgba(255,255,255,0.1)",
+                }}
+                onFocus={(e) => { onFocusIn(e); if (searchResults.length > 0) setShowDropdown(true); }}
+                onBlur={onFocusOut}
+              />
+              <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
+                {isSearching
+                  ? <Loader2 size={15} className="animate-spin" style={{ color: BRAND.muted }} />
+                  : <Search size={15} style={{ color: BRAND.muted }} />}
+              </div>
+            </div>
+
+            {/* Dropdown */}
+            {showDropdown && searchResults.length > 0 && (
+              <div
+                className="absolute z-50 w-full mt-1 rounded-xl border overflow-hidden shadow-xl"
+                style={{ backgroundColor: "#0f1e3a", borderColor: "rgba(255,255,255,0.12)" }}
+              >
+                {searchResults.slice(0, 6).map((item) => (
+                  <button
+                    key={item.companyNumber}
+                    type="button"
+                    onMouseDown={() => handleSelectCompany(item)}
+                    className="w-full px-4 py-3 text-left flex items-center justify-between gap-3 transition-colors duration-150"
+                    style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "rgba(62,146,204,0.12)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
+                  >
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-white truncate">{item.companyName}</div>
+                      <div className="text-[11px] mt-0.5" style={{ color: BRAND.muted }}>
+                        {item.companyNumber} · {item.companyStatus}
+                      </div>
+                    </div>
+                    <span
+                      className="text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0"
+                      style={{
+                        backgroundColor: item.companyStatus === "active" ? `${BRAND.green}15` : "rgba(255,255,255,0.08)",
+                        color: item.companyStatus === "active" ? BRAND.green : BRAND.muted,
+                      }}
+                    >
+                      {item.companyStatus}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Selected company number chip */}
+            {regNumber && (
+              <div className="flex items-center gap-2 mt-2">
+                <div
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold"
+                  style={{ backgroundColor: `${BRAND.green}10`, borderColor: `${BRAND.green}25`, color: BRAND.green }}
+                >
+                  <CheckCircle2 size={12} />
+                  {regNumber}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setRegNumber(""); setLegalName(""); setSearchQuery(""); }}
+                  className="text-xs"
+                  style={{ color: "rgba(255,255,255,0.35)" }}
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <input
+            type="text"
+            placeholder="e.g. RC-1234567"
+            value={regNumber}
+            onChange={(e) => setRegNumber(e.target.value)}
+            className={inputBase}
+            style={{ ...inputStyle, borderColor: errors.regNumber ? "#ef4444" : "rgba(255,255,255,0.1)" }}
+            onFocus={onFocusIn}
+            onBlur={onFocusOut}
+          />
+        )}
         {errors.regNumber && <span className="text-xs text-red-400">{errors.regNumber}</span>}
       </div>
 
@@ -825,8 +982,10 @@ function TaxAuthorityToggle({
 
 function HMRCConnectForm({ onSubmit }: { onSubmit: () => void }) {
   const [authority, setAuthority] = useState<"HMRC" | "FIRS">("HMRC");
+  const [vatNumber, setVatNumber] = useState("");
   const [loading, setLoading] = useState(false);
   const [connectTax] = useConnectTaxMutation();
+  const [triggerGetHmrcAuthorizeUrl] = useLazyGetHmrcAuthorizeUrlQuery();
   const { toast } = useToast();
 
   const isHMRC = authority === "HMRC";
@@ -834,14 +993,28 @@ function HMRCConnectForm({ onSubmit }: { onSubmit: () => void }) {
   const handleConnect = async () => {
     setLoading(true);
     try {
-      await connectTax({
-        provider: authority,
-        jurisdiction: authority === "HMRC" ? "GB" : "NG",
-      }).unwrap();
-      onSubmit();
-    } catch (error) {
-      toast({ title: "Failed to connect tax data. Please try again.", variant: "error" });
-    } finally {
+      if (authority === "HMRC") {
+        // Real OAuth flow: get HMRC authorization URL then redirect the browser
+        const state = btoa(JSON.stringify({
+          redirectTo: "/hmrc/callback",
+          vatNumber: vatNumber.trim() || null,
+          nonce: Math.random().toString(36).slice(2),
+        }));
+        const { authorizationUrl } = await triggerGetHmrcAuthorizeUrl(state).unwrap();
+        window.location.href = authorizationUrl;
+        // Page is navigating away — do not call setLoading(false) or onSubmit
+      } else {
+        // FIRS: direct POST (no OAuth defined for FIRS in the API)
+        await connectTax({
+          provider: "FIRS",
+          jurisdiction: "NG",
+          vatNumber: vatNumber.trim() || undefined,
+        }).unwrap();
+        onSubmit();
+        setLoading(false);
+      }
+    } catch {
+      toast({ title: `Failed to connect ${isHMRC ? "HMRC" : "FIRS"}. Please try again.`, variant: "error" });
       setLoading(false);
     }
   };
@@ -860,12 +1033,32 @@ function HMRCConnectForm({ onSubmit }: { onSubmit: () => void }) {
           : "🔗 Connect your FIRS account to automatically retrieve Nigerian tax obligations and filing deadlines."}
       </div>
 
-      <div
-        className="rounded-xl border p-4 text-xs leading-relaxed"
-        style={{ backgroundColor: "rgba(255,255,255,0.03)", borderColor: "rgba(255,255,255,0.08)" }}
-      >
-        <strong>Next step:</strong> You&apos;ll be redirected to {isHMRC ? "HMRC" : "FIRS"} to authorise access. Once authorised, return here to complete the connection.
+      {/* VAT number — optional for both providers */}
+      <div className="flex flex-col gap-1.5">
+        <FieldLabel>VAT Number <span style={{ color: BRAND.muted, fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional)</span></FieldLabel>
+        <input
+          type="text"
+          placeholder={isHMRC ? "e.g. GB123456789" : "e.g. 12345678-0001"}
+          value={vatNumber}
+          onChange={(e) => setVatNumber(e.target.value)}
+          className={inputBase}
+          style={inputStyle}
+          onFocus={onFocusIn}
+          onBlur={onFocusOut}
+        />
+        <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.3)" }}>
+          {isHMRC ? "Speeds up obligation lookup once connected" : "Your FIRS TIN or VAT registration number"}
+        </span>
       </div>
+
+      {isHMRC && (
+        <div
+          className="rounded-xl border p-4 text-xs leading-relaxed"
+          style={{ backgroundColor: "rgba(255,255,255,0.03)", borderColor: "rgba(255,255,255,0.08)" }}
+        >
+          <strong>Next step:</strong> You&apos;ll be redirected to HMRC to authorise access. Once authorised, you&apos;ll be returned here automatically.
+        </div>
+      )}
 
       <button
         type="button"
@@ -876,8 +1069,8 @@ function HMRCConnectForm({ onSubmit }: { onSubmit: () => void }) {
         onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.88"; }}
         onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
       >
-        {loading ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
-        {loading ? "Connecting..." : `Connect to ${isHMRC ? "HMRC" : "FIRS"}`}
+        {loading ? <Loader2 size={15} className="animate-spin" /> : <Link2 size={15} />}
+        {loading ? (isHMRC ? "Redirecting to HMRC…" : "Connecting…") : `Connect to ${isHMRC ? "HMRC" : "FIRS"}`}
       </button>
     </div>
   );
