@@ -181,21 +181,30 @@ function CheckRow({ check, sectionKey, onAction }: { check: EvidenceCheck; secti
         </div>
       </div>
       <div className="flex-shrink-0 flex flex-col items-end gap-2">
-        {action && onAction && (
-          <button
-            type="button"
-            onClick={() => onAction(action.type)}
-            className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border transition-all duration-200"
-            style={{
-              backgroundColor: `${BRAND.accent}12`,
-              borderColor: `${BRAND.accent}30`,
-              color: BRAND.accent,
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${BRAND.accent}25`; }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = `${BRAND.accent}12`; }}
+        {check.status === "pass" ? (
+          <span
+            className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border"
+            style={{ color: BRAND.green, backgroundColor: `${BRAND.green}12`, borderColor: `${BRAND.green}30` }}
           >
-            {action.label}
-          </button>
+            Passed
+          </span>
+        ) : (
+          action && onAction && (
+            <button
+              type="button"
+              onClick={() => onAction(action.type)}
+              className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border transition-all duration-200"
+              style={{
+                backgroundColor: `${BRAND.accent}12`,
+                borderColor: `${BRAND.accent}30`,
+                color: BRAND.accent,
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${BRAND.accent}25`; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = `${BRAND.accent}12`; }}
+            >
+              {action.label}
+            </button>
+          )
         )}
       </div>
     </div>
@@ -327,6 +336,11 @@ export function SectionCard({ sectionKey, section, onAction, apiSection, externa
               {ACTION_ICONS[actionType]}
               {actionLabel}
             </button>
+            {section.evalMessage && (
+              <p className="text-[11px] mt-1.5 text-center leading-relaxed" style={{ color: "rgba(255,255,255,0.4)" }}>
+                {section.evalMessage}
+              </p>
+            )}
           </div>
         )}
       </div>

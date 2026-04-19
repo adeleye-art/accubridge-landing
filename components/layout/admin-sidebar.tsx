@@ -290,7 +290,7 @@ function UserFooter() {
         localStorage.removeItem("auth_token");
         localStorage.removeItem("refresh_token");
       }
-      router.push("/signin");
+      router.push("/login");
     }
   };
 

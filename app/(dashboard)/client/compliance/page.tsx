@@ -53,18 +53,20 @@ function ruleToSection(
   actionType: SectionScore["action_type"],
   source: string,
 ): SectionScore {
+  const isPassed = rule.passed === true;
+  const score = rule.score ?? 0;
   return {
-    earned: rule.score,
+    earned: score,
     max: rule.maxScore,
-    passed: rule.passed ? [rule.message] : [],
-    missing: rule.passed ? [] : [rule.message],
+    passed: isPassed ? [rule.message] : [],
+    missing: isPassed ? [] : [rule.message],
     action_label: actionLabel,
     action_type: actionType,
     checks: [
       {
         label: rule.ruleName,
-        status: rule.passed ? "pass" : "fail",
-        points: rule.score,
+        status: isPassed ? "pass" : "fail",
+        points: score,
         max: rule.maxScore,
         source,
         source_type: "api",
@@ -89,28 +91,26 @@ function buildBreakdown(
     ? ruleToSection(evaluateData.identityVerification, "Verify Identity", "review", "Platform")
     : buildFallbackSection(20, "Start KYC Verification", "review");
 
-  // Enrich identity checks with KYC and KYB sub-checks
+  // Enrich identity checks — KYC uses identityVerification, KYB uses registrationLegal
   identity.checks = [
     {
       label: "Owner KYC passed",
-      status: evaluateData?.identityVerification.passed ? "pass" : "fail",
-      points: evaluateData ? Math.floor(evaluateData.identityVerification.score / 2) : 0,
-      max: evaluateData ? Math.floor(evaluateData.identityVerification.maxScore / 2) : 10,
+      status: evaluateData?.identityVerification?.passed === true ? "pass" : "fail",
+      points: evaluateData?.identityVerification?.score ?? 0,
+      max: evaluateData?.identityVerification?.maxScore ?? 100,
       source: "Sumsub", source_type: "api",
-      detail: evaluateData?.identityVerification.passed
-        ? "KYC identity verified successfully."
-        : "KYC not yet initiated. Complete identity verification to score this check.",
+      detail: evaluateData?.identityVerification?.message
+        ?? "KYC not yet initiated. Complete identity verification to score this check.",
       checked_at: evaluateData?.lastEvaluated ?? new Date().toISOString(),
     },
     {
       label: "Business KYB passed",
-      status: evaluateData?.identityVerification.passed ? "pass" : "fail",
-      points: evaluateData ? Math.ceil(evaluateData.identityVerification.score / 2) : 0,
-      max: evaluateData ? Math.ceil(evaluateData.identityVerification.maxScore / 2) : 10,
+      status: evaluateData?.registrationLegal?.passed === true ? "pass" : "fail",
+      points: evaluateData?.registrationLegal?.score ?? 0,
+      max: evaluateData?.registrationLegal?.maxScore ?? 100,
       source: "Sumsub", source_type: "api",
-      detail: evaluateData?.identityVerification.passed
-        ? "Business KYB verified successfully."
-        : "Business KYB not yet initiated. Required to verify the legal entity.",
+      detail: evaluateData?.registrationLegal?.message
+        ?? "Business KYB not yet initiated. Required to verify the legal entity.",
       checked_at: evaluateData?.lastEvaluated ?? new Date().toISOString(),
     },
   ];
@@ -122,55 +122,32 @@ function buildBreakdown(
 
   registration.checks = [
     {
-      label: "Registration number provided",
-      status: evaluateData?.registrationLegal.passed ? "pass" : "fail",
-      points: evaluateData?.registrationLegal.passed ? 3 : 0,
-      max: 3,
-      source: "User submitted", source_type: "user_input",
-      detail: evaluateData?.registrationLegal.passed
-        ? "Registration number submitted and verified."
-        : "No Companies House or CAC registration number submitted.",
-      checked_at: evaluateData?.lastEvaluated ?? new Date().toISOString(),
-    },
-    {
-      label: "Legal name matches official record",
-      status: evaluateData?.registrationLegal.passed ? "pass" : "fail",
-      points: evaluateData?.registrationLegal.passed ? 5 : 0,
-      max: 5,
+      label: "Registration & Legal (KYB)",
+      status: evaluateData?.registrationLegal?.passed === true ? "pass" : "fail",
+      points: evaluateData?.registrationLegal?.score ?? 0,
+      max: evaluateData?.registrationLegal?.maxScore ?? 100,
       source: "Companies House", source_type: "api",
-      detail: evaluateData?.registrationLegal.message ?? "Company name not yet verified against the official Companies House record.",
+      detail: evaluateData?.registrationLegal?.message
+        ?? "Business registration not yet verified.",
       checked_at: evaluateData?.lastEvaluated ?? new Date().toISOString(),
     },
     {
-      label: "Entity status active",
-      status: evaluateData?.registrationLegal.passed ? "pass" : "fail",
-      points: evaluateData?.registrationLegal.passed ? 4 : 0,
-      max: 4,
-      source: "Companies House", source_type: "api",
-      detail: evaluateData?.registrationLegal.passed
-        ? "Entity confirmed as active."
-        : "Entity status not confirmed. Registration number required first.",
-      checked_at: evaluateData?.lastEvaluated ?? new Date().toISOString(),
-    },
-    {
-      label: "Core profile complete",
-      status: evaluateData?.registrationLegal.passed ? "pass" : "fail",
-      points: evaluateData?.registrationLegal.passed ? 3 : 0,
-      max: 3,
+      label: evaluateData?.profileCompletion?.ruleName ?? "Profile Completion / Onboarding",
+      status: evaluateData?.profileCompletion?.passed === true ? "pass" : "fail",
+      points: evaluateData?.profileCompletion?.score ?? 0,
+      max: evaluateData?.profileCompletion?.maxScore ?? 100,
       source: "Platform logic", source_type: "internal_logic",
-      detail: evaluateData?.registrationLegal.passed
-        ? "Business profile is complete."
-        : "Business name, industry, type, and operating country are not all populated.",
+      detail: evaluateData?.profileCompletion?.message
+        ?? "Business name, industry, type, and operating country are not all populated.",
       checked_at: evaluateData?.lastEvaluated ?? new Date().toISOString(),
     },
   ];
 
   // ── Tax Setup (max 15) ──────────────────────────────────────────────────────
   const taxConnected = financialStatus?.isTaxConnected ?? false;
-  const taxEarned = taxConnected ? 15 : 0;
   const tax: SectionScore = {
-    earned: taxEarned,
-    max: 15,
+    earned: 0,
+    max: 0,
     passed: taxConnected ? [`${financialStatus?.taxProvider ?? "Tax provider"} connected`] : [],
     missing: taxConnected ? [] : [
       "Tax ID not provided (0/4)",
@@ -183,8 +160,8 @@ function buildBreakdown(
       {
         label: "Tax ID provided",
         status: taxConnected ? "pass" : "fail",
-        points: taxConnected ? 4 : 0,
-        max: 4,
+        points: 0,
+        max: 0,
         source: "User submitted", source_type: "user_input",
         detail: taxConnected ? "Tax ID verified via connected provider." : "UTR / tax ID not yet submitted.",
         checked_at: financialStatus?.taxConnectedAt ?? new Date().toISOString(),
@@ -192,8 +169,8 @@ function buildBreakdown(
       {
         label: "VAT / payroll setup declared",
         status: taxConnected ? "pass" : "fail",
-        points: taxConnected ? 4 : 0,
-        max: 4,
+        points: 0,
+        max: 0,
         source: "User submitted", source_type: "user_input",
         detail: taxConnected
           ? "VAT registration and payroll status confirmed."
@@ -203,8 +180,8 @@ function buildBreakdown(
       {
         label: "Obligations synced from HMRC / FIRS",
         status: taxConnected ? (financialStatus?.taxSyncActive ? "pass" : "review") : "fail",
-        points: taxConnected ? 7 : 0,
-        max: 7,
+        points: 0,
+        max: 0,
         source: "HMRC / FIRS API", source_type: "api",
         detail: taxConnected
           ? financialStatus?.taxSyncActive
@@ -220,8 +197,16 @@ function buildBreakdown(
   const catRule = evaluateData?.categorisationCompleteness;
   const recRule = evaluateData?.reconciliationRecency;
   const bankConnected = financialStatus?.isBankConnected ?? false;
-  const financialEarned = (catRule?.score ?? 0) + (recRule?.score ?? 0);
-  const financialMax = (catRule?.maxScore ?? 10) + (recRule?.maxScore ?? 10);
+  const financialEarned =
+    (evaluateData?.financialSetup?.score ?? 0) +
+    (evaluateData?.transactionImport?.score ?? 0) +
+    (catRule?.score ?? 0) +
+    (recRule?.score ?? 0);
+  const financialMax =
+    (evaluateData?.financialSetup?.maxScore ?? 100) +
+    (evaluateData?.transactionImport?.maxScore ?? 100) +
+    (catRule?.maxScore ?? 100) +
+    (recRule?.maxScore ?? 100);
 
   const financial: SectionScore = {
     earned: financialEarned,
@@ -239,41 +224,41 @@ function buildBreakdown(
     action_type: "connect",
     checks: [
       {
-        label: "Bank connected or statement imported",
-        status: bankConnected ? "pass" : "fail",
-        points: bankConnected ? 5 : 0,
-        max: 5,
+        label: evaluateData?.financialSetup?.ruleName ?? "Financial Setup",
+        status: evaluateData?.financialSetup?.passed === true ? "pass" : "fail",
+        points: evaluateData?.financialSetup?.score ?? 0,
+        max: evaluateData?.financialSetup?.maxScore ?? 100,
         source: "TrueLayer", source_type: "api",
-        detail: bankConnected
-          ? `${financialStatus?.bankProvider ?? "Bank"} connected${financialStatus?.bankConnectedAt ? ` on ${new Date(financialStatus.bankConnectedAt).toLocaleDateString("en-GB")}` : ""}.`
-          : "No bank account connected and no statement uploaded.",
+        detail: evaluateData?.financialSetup?.message
+          ?? (bankConnected
+            ? `${financialStatus?.bankProvider ?? "Bank"} connected${financialStatus?.bankConnectedAt ? ` on ${new Date(financialStatus.bankConnectedAt).toLocaleDateString("en-GB")}` : ""}.`
+            : "No bank account connected and no statement uploaded."),
         checked_at: financialStatus?.bankConnectedAt ?? new Date().toISOString(),
       },
       {
-        label: "Transactions imported",
-        status: bankConnected ? "pass" : "fail",
-        points: bankConnected ? 4 : 0,
-        max: 4,
-        source: "TrueLayer", source_type: "api",
-        detail: bankConnected
-          ? "Transactions available from connected bank account."
-          : "No transactions available. Connect a bank account or import a statement first.",
-        checked_at: financialStatus?.bankConnectedAt ?? new Date().toISOString(),
+        label: evaluateData?.transactionImport?.ruleName ?? "Transaction Import",
+        status: evaluateData?.transactionImport?.passed === true ? "pass" : "fail",
+        points: evaluateData?.transactionImport?.score ?? 0,
+        max: evaluateData?.transactionImport?.maxScore ?? 100,
+        source: "Platform", source_type: "api",
+        detail: evaluateData?.transactionImport?.message
+          ?? "No transactions available. Connect a bank account or import a statement first.",
+        checked_at: evaluateData?.lastEvaluated ?? new Date().toISOString(),
       },
       {
-        label: catRule?.ruleName ?? "Categorisation completeness",
-        status: catRule?.passed ? "pass" : "fail",
+        label: catRule?.ruleName ?? "Categorisation Completeness",
+        status: catRule?.passed === true ? "pass" : "fail",
         points: catRule?.score ?? 0,
-        max: catRule?.maxScore ?? 4,
+        max: catRule?.maxScore ?? 100,
         source: "Platform logic", source_type: "internal_logic",
         detail: catRule?.message ?? "No transactions categorised. Minimum 80% required for full points.",
         checked_at: evaluateData?.lastEvaluated ?? new Date().toISOString(),
       },
       {
-        label: recRule?.ruleName ?? "Reconciliation current",
-        status: recRule?.passed ? "pass" : "fail",
+        label: recRule?.ruleName ?? "Reconciliation Recency",
+        status: recRule?.passed === true ? "pass" : "fail",
         points: recRule?.score ?? 0,
-        max: recRule?.maxScore ?? 5,
+        max: recRule?.maxScore ?? 100,
         source: "Platform logic", source_type: "internal_logic",
         detail: recRule?.message ?? "No reconciliation started. Reconcile within 30 days to score this check.",
         checked_at: evaluateData?.lastEvaluated ?? new Date().toISOString(),
@@ -290,8 +275,8 @@ function buildBreakdown(
     {
       label: "Sanctions screening clear",
       status: amlData?.sanctionsScreeningStatus === "Clear" ? "pass" : "pending",
-      points: amlData?.sanctionsScreeningStatus === "Clear" ? 5 : 0,
-      max: 5,
+      points: 0,
+      max: 0,
       source: "Sumsub", source_type: "api",
       detail: amlData?.sanctionsScreeningStatus === "Clear"
         ? "No matches found across OFAC, UN, EU, and UK sanctions lists."
@@ -301,8 +286,8 @@ function buildBreakdown(
     {
       label: "PEP check clear",
       status: amlData && !amlData.hasPepFlags ? "pass" : "pending",
-      points: amlData && !amlData.hasPepFlags ? 5 : 0,
-      max: 5,
+      points: 0,
+      max: 0,
       source: "Sumsub", source_type: "api",
       detail: amlData && !amlData.hasPepFlags
         ? "Not identified as a Politically Exposed Person or close associate."
@@ -312,8 +297,8 @@ function buildBreakdown(
     {
       label: "Adverse media check clear",
       status: amlData?.adverseMediaStatus === "Clear" ? "pass" : "pending",
-      points: amlData?.adverseMediaStatus === "Clear" ? 5 : 0,
-      max: 5,
+      points: 0,
+      max: 0,
       source: "Sumsub", source_type: "api",
       detail: amlData?.adverseMediaStatus === "Clear"
         ? "No relevant adverse media results from global news database scan."
@@ -322,23 +307,16 @@ function buildBreakdown(
     },
   ];
 
-  if (amlData) {
-    risk.earned = risk.checks.reduce((sum, c) => sum + c.points, 0);
-    risk.passed = risk.checks.filter((c) => c.status === "pass").map((c) => c.label);
-    risk.missing = risk.checks.filter((c) => c.status !== "pass").map((c) => c.label);
-  }
-
   // ── Documents (max 10) ──────────────────────────────────────────────────────
   const docs = documentsData?.documents ?? [];
   const verifiedDocs = docs.filter((d) => d.status === "Verified");
-  const docsEarned = Math.min(verifiedDocs.length * 3, 10);
 
   const documents: SectionScore = {
-    earned: docsEarned,
-    max: 10,
+    earned: 0,
+    max: 0,
     passed: verifiedDocs.map((d) => `${d.documentType}: ${d.fileName}`),
     missing: docs.length === 0
-      ? ["No core documents uploaded (0/6)", "No active documents to verify expiry (0/4)"]
+      ? ["No core documents uploaded", "No active documents to verify expiry"]
       : [],
     action_label: "Upload Documents",
     action_type: "upload",
@@ -346,8 +324,8 @@ function buildBreakdown(
       ? docs.map((doc) => ({
           label: `${doc.documentType}: ${doc.fileName}`,
           status: doc.status === "Verified" ? "pass" as const : "review" as const,
-          points: doc.status === "Verified" ? 3 : 1,
-          max: 3,
+          points: 0,
+          max: 0,
           source: "User submitted", source_type: "user_input" as const,
           detail: `Status: ${doc.status} · Uploaded: ${new Date(doc.uploadedAt).toLocaleDateString("en-GB")} · Size: ${(doc.fileSizeBytes / 1024).toFixed(2)} KB`,
           checked_at: doc.uploadedAt,
@@ -355,14 +333,14 @@ function buildBreakdown(
       : [
           {
             label: "Required documents uploaded",
-            status: "fail" as const, points: 0, max: 6,
+            status: "fail" as const, points: 0, max: 0,
             source: "User submitted", source_type: "user_input" as const,
             detail: "No documents uploaded. Upload Certificate of Incorporation, proof of address, and director ID.",
             checked_at: new Date().toISOString(),
           },
           {
             label: "No expired core document",
-            status: "pending" as const, points: 0, max: 4,
+            status: "pending" as const, points: 0, max: 0,
             source: "Platform logic", source_type: "internal_logic" as const,
             detail: "No documents submitted yet. Upload required documents to score this check.",
             checked_at: new Date().toISOString(),
@@ -373,12 +351,11 @@ function buildBreakdown(
   // ── Operating History / Behaviour (max 5) ───────────────────────────────────
   const openAlerts = (alertsData?.alerts ?? []).filter((a) => a.status === "Open");
   const hasHistory = (historyData?.history?.length ?? 0) > 0;
-  const behaviourEarned = openAlerts.length === 0 && hasHistory ? 5 : openAlerts.length === 0 ? 3 : 0;
 
   const behaviour: SectionScore = {
-    earned: behaviourEarned,
-    max: 5,
-    passed: behaviourEarned > 0 ? ["Platform activity recorded"] : [],
+    earned: 0,
+    max: 0,
+    passed: hasHistory ? ["Platform activity recorded"] : [],
     missing: [
       ...(openAlerts.length > 0 ? [`${openAlerts.length} open compliance alert(s) unresolved`] : []),
       ...(!hasHistory ? ["No platform activity recorded"] : []),
@@ -389,8 +366,8 @@ function buildBreakdown(
       {
         label: "Active monthly use",
         status: hasHistory ? "pass" : "fail",
-        points: hasHistory ? 2 : 0,
-        max: 2,
+        points: 0,
+        max: 0,
         source: "Platform logic", source_type: "internal_logic",
         detail: hasHistory
           ? "Platform activity recorded for this account."
@@ -400,8 +377,8 @@ function buildBreakdown(
       {
         label: "Timely record updates",
         status: hasHistory ? "pass" : "fail",
-        points: hasHistory ? 2 : 0,
-        max: 2,
+        points: 0,
+        max: 0,
         source: "Platform logic", source_type: "internal_logic",
         detail: hasHistory ? "Financial records have been updated recently." : "Financial records have not been updated.",
         checked_at: new Date().toISOString(),
@@ -409,8 +386,8 @@ function buildBreakdown(
       {
         label: "No long-unresolved alerts",
         status: openAlerts.length === 0 ? "pass" : "fail",
-        points: openAlerts.length === 0 ? 1 : 0,
-        max: 1,
+        points: 0,
+        max: 0,
         source: "Platform logic", source_type: "internal_logic",
         detail: openAlerts.length === 0
           ? "All compliance alerts have been resolved."
@@ -419,6 +396,16 @@ function buildBreakdown(
       },
     ],
   };
+
+  // ── Attach evaluate messages so section cards can show them ──────────────────
+  identity.evalMessage = evaluateData?.identityVerification.message;
+  registration.evalMessage = evaluateData?.registrationLegal.message;
+  risk.evalMessage = evaluateData?.amlCheck.message;
+  // Financial: prefer the first failing rule's message, fall back to success message
+  financial.evalMessage =
+    (recRule && !recRule.passed)  ? recRule.message :
+    (catRule && !catRule.passed)  ? catRule.message :
+    catRule?.message;
 
   return { identity, registration, tax, financial, risk, documents, behaviour };
 }
@@ -451,16 +438,6 @@ const SECTION_KEYS = [
   "identity", "registration", "tax", "financial", "risk", "documents", "behaviour",
 ] as const;
 
-function mapCategory(category: string): Pick<ActionItem, "action_type" | "section"> {
-  switch (category) {
-    case "KYC":       return { action_type: "review",  section: "identity"  };
-    case "KYB":       return { action_type: "fix",     section: "identity"  };
-    case "Financial": return { action_type: "connect", section: "financial" };
-    case "Documents": return { action_type: "upload",  section: "documents" };
-    case "AML":       return { action_type: "review",  section: "risk"      };
-    default:          return { action_type: "fix",     section: "behaviour" };
-  }
-}
 
 export default function CompliancePage() {
   const router = useRouter();
@@ -533,18 +510,56 @@ export default function CompliancePage() {
     [evaluateData, amlData, documentsData, financialStatus, alertsData, historyData],
   );
 
-  // ── Action queue from dashboard tasks ─────────────────────────────────────
-  const actionItems: ActionItem[] = (centreData?.tasks ?? [])
-    .filter((t) => t.status !== "Completed")
-    .map((t) => ({
-      id: String(t.id),
-      title: t.title,
-      description: t.description,
-      priority: t.priority.toLowerCase() as "high" | "medium" | "low",
-      ...mapCategory(t.category),
-    }));
+  // ── Action queue from evaluate endpoint ───────────────────────────────────
+  const actionItems: ActionItem[] = useMemo(() => {
+    if (!evaluateData) return [];
+    const items: ActionItem[] = [];
+
+    const { transactionImport, categorisationCompleteness, reconciliationRecency,
+            identityVerification, registrationLegal, amlCheck, financialSetup } = evaluateData;
+
+    if (transactionImport && transactionImport.passed !== true)
+      items.push({ id: "transactionImport", title: "Import Transactions",
+        description: transactionImport.message, priority: "high",
+        action_type: "fix", section: "financial", route: "/client/transactions" });
+
+    if (categorisationCompleteness && categorisationCompleteness.passed !== true)
+      items.push({ id: "categorisationCompleteness", title: "Categorise Transactions",
+        description: categorisationCompleteness.message, priority: "medium",
+        action_type: "fix", section: "financial", route: "/client/transactions" });
+
+    if (reconciliationRecency && reconciliationRecency.passed !== true)
+      items.push({ id: "reconciliationRecency", title: "Complete Bank Reconciliation",
+        description: reconciliationRecency.message, priority: "high",
+        action_type: "fix", section: "financial",
+        route: "/client/transactions/reconciliation/new" });
+
+    if (identityVerification && identityVerification.passed !== true)
+      items.push({ id: "identityVerification", title: "Verify Your Identity (KYC)",
+        description: identityVerification.message,
+        priority: (identityVerification.score ?? 0) > 0 ? "medium" : "high",
+        action_type: "review", section: "identity" });
+
+    if (registrationLegal && registrationLegal.passed !== true)
+      items.push({ id: "registrationLegal", title: "Fix Business Registration",
+        description: registrationLegal.message, priority: "high",
+        action_type: "fix", section: "registration" });
+
+    if (amlCheck && amlCheck.passed !== true)
+      items.push({ id: "amlCheck", title: "Run AML Screening",
+        description: amlCheck.message, priority: "medium",
+        action_type: "review", section: "risk" });
+
+    if (financialSetup && financialSetup.passed !== true)
+      items.push({ id: "financialSetup", title: "Connect Bank Account",
+        description: financialSetup.message, priority: "high",
+        action_type: "connect", section: "financial" });
+
+    return items;
+  }, [evaluateData]);
 
   const handleAction = (item: ActionItem) => {
+    if (item.route) { router.push(item.route); return; }
     setOpenSectionKey(item.section);
   };
 
@@ -570,9 +585,9 @@ export default function CompliancePage() {
 
     // Financial Records
     if (fixType === "bank_connect") { setFixType("bank_connect"); setFixOpen(true); return; }
-    if (fixType === "import_transactions") { setFixType("import_transactions"); setFixOpen(true); return; }
-    if (fixType === "categorise") { setFixType("categorise"); setFixOpen(true); return; }
-    if (fixType === "reconcile") { setFixType("reconcile"); setFixOpen(true); return; }
+    if (fixType === "import_transactions") { router.push("/client/transactions"); return; }
+    if (fixType === "categorise") { router.push("/client/transactions"); return; }
+    if (fixType === "reconcile") { router.push("/client/transactions/reconciliation/new"); return; }
     if (fixType === "receipts") { setFixType("receipts"); setFixOpen(true); return; }
     if (fixType === "financial_setup") { setConnectDefaultTab("bank"); setConnectOpen(true); return; }
 

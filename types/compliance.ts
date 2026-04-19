@@ -23,6 +23,7 @@ export interface SectionScore {
   checks: EvidenceCheck[];
   action_label: string;   // CTA label e.g. "Verify Identity"
   action_type: "upload" | "connect" | "review" | "fix";
+  evalMessage?: string;   // message from evaluate endpoint to show under the CTA
 }
 
 export interface ComplianceBreakdown {
@@ -43,6 +44,7 @@ export interface ActionItem {
   priority: "high" | "medium" | "low";
   due_date?: string;
   section: keyof ComplianceBreakdown;
+  route?: string;
 }
 export type RiskLevel = "low" | "medium" | "high" | "very_high";
 export type PassportStatus = "locked" | "not_generated" | "generated";

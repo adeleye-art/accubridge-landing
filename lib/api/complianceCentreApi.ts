@@ -44,8 +44,8 @@ export interface ComplianceCentreAlert {
 
 export interface EvaluateRuleResult {
   ruleName: string;
-  passed: boolean;
-  score: number;
+  passed?: boolean;   // absent from API response when rule has not passed
+  score?: number;     // absent when rule has not scored
   maxScore: number;
   message: string;
 }
@@ -75,6 +75,9 @@ export interface EvaluateResponse {
   identityVerification: EvaluateRuleResult;
   registrationLegal: EvaluateRuleResult;
   amlCheck: EvaluateRuleResult;
+  financialSetup?: EvaluateRuleResult;
+  transactionImport?: EvaluateRuleResult;
+  profileCompletion?: EvaluateRuleResult;
   fundingEligibility: FundingEligibility;
 }
 
