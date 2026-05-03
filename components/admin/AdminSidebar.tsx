@@ -2,6 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useDispatch } from 'react-redux'
+import { useRouter } from 'next/navigation'
 import {
   LayoutDashboard,
   Store,
@@ -15,31 +17,31 @@ import {
 import { cn } from '@/lib/utils'
 import { Avatar } from '@/components/ui/Avatar'
 import { useAuth } from '@/hooks/useAuth'
-import { useGetOrdersQuery, useGetDriversQuery } from '@/store/api/adminApi'
-import { useRouter } from 'next/navigation'
+import { logout } from '@/store/swidexAuthSlice'
+import type { AppDispatch } from '@/store'
+
+// Mock badge counts — replace with real data when API is ready
+const PENDING_ORDERS  = 5
+const PENDING_DRIVERS = 3
 
 const NAV_ITEMS = [
-  { label: 'Overview', href: '/admin/dashboard', icon: LayoutDashboard },
-  { label: 'Vendor Management', href: '/admin/vendors', icon: Store },
-  { label: 'Order Monitor', href: '/admin/orders', icon: ShoppingBag, badge: true },
-  { label: 'Driver Management', href: '/admin/drivers', icon: Truck, driverBadge: true },
-  { label: 'Referrals & Credits', href: '/admin/referrals', icon: Gift },
-  { label: 'Commissions', href: '/admin/settings', icon: Percent },
-  { label: 'Settings', href: '/admin/settings', icon: Settings },
+  { label: 'Overview',           href: '/afrocart/admin/dashboard', icon: LayoutDashboard },
+  { label: 'Vendor Management',  href: '/afrocart/admin/vendors',   icon: Store },
+  { label: 'Order Monitor',      href: '/afrocart/admin/orders',    icon: ShoppingBag,  badge: true },
+  { label: 'Driver Management',  href: '/afrocart/admin/drivers',   icon: Truck,        driverBadge: true },
+  { label: 'Referrals & Credits',href: '/afrocart/admin/referrals', icon: Gift },
+  { label: 'Commissions',        href: '/afrocart/admin/settings',  icon: Percent },
+  { label: 'Settings',           href: '/afrocart/admin/settings',  icon: Settings },
 ]
 
 export function AdminSidebar() {
-  const pathname = usePathname()
-  const router = useRouter()
-  const { user, logout } = useAuth()
-  const { data: pendingOrders } = useGetOrdersQuery({ status: 'pending' })
-  const { data: pendingDrivers } = useGetDriversQuery({ approval_status: 'pending' })
-
-  const pendingCount = pendingOrders?.length ?? 0
-  const pendingDriverCount = pendingDrivers?.length ?? 0
+  const pathname  = usePathname()
+  const dispatch  = useDispatch<AppDispatch>()
+  const router    = useRouter()
+  const { user }  = useAuth()
 
   function handleLogout() {
-    logout()
+    dispatch(logout())
     router.push('/login')
   }
 
@@ -64,8 +66,8 @@ export function AdminSidebar() {
           const Icon = item.icon
           const isActive =
             pathname === item.href ||
-            (item.href !== '/admin/settings' && pathname.startsWith(item.href))
-          const badgeCount = item.badge ? pendingCount : item.driverBadge ? pendingDriverCount : 0
+            (item.href !== '/afrocart/admin/settings' && pathname.startsWith(item.href))
+          const badgeCount = item.badge ? PENDING_ORDERS : item.driverBadge ? PENDING_DRIVERS : 0
 
           return (
             <Link
@@ -81,12 +83,10 @@ export function AdminSidebar() {
               <Icon size={16} className="flex-shrink-0" />
               <span className="flex-1">{item.label}</span>
               {badgeCount > 0 && (
-                <span
-                  className={cn(
-                    'text-xs font-medium px-1.5 py-0.5 rounded-full min-w-[20px] text-center',
-                    isActive ? 'bg-sidebar text-gold' : 'bg-gold text-sidebar'
-                  )}
-                >
+                <span className={cn(
+                  'text-xs font-medium px-1.5 py-0.5 rounded-full min-w-[20px] text-center',
+                  isActive ? 'bg-sidebar text-gold' : 'bg-gold text-sidebar'
+                )}>
                   {badgeCount}
                 </span>
               )}

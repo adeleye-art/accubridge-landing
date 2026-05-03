@@ -2,12 +2,12 @@
 
 import { useDispatch, useSelector } from 'react-redux'
 import type { RootState, AppDispatch } from '@/store'
-import { logout } from '@/store/authSlice'
+import { logout } from '@/store/swidexAuthSlice'
 
 export function useAuth() {
   const dispatch = useDispatch<AppDispatch>()
   const { user, token, isAuthenticated, isLoading } = useSelector(
-    (state: RootState) => state.auth
+    (state: RootState) => state.swidexAuth
   )
 
   const handleLogout = () => {

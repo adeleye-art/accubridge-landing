@@ -1,30 +1,35 @@
 'use client'
 
 import { usePathname } from 'next/navigation'
+import { useDispatch } from 'react-redux'
+import { useRouter } from 'next/navigation'
 import { Bell, Search, ChevronDown } from 'lucide-react'
 import { useState } from 'react'
 import { Avatar } from '@/components/ui/Avatar'
 import { useAuth } from '@/hooks/useAuth'
-import { useRouter } from 'next/navigation'
+import { logout } from '@/store/swidexAuthSlice'
+import type { AppDispatch } from '@/store'
 
 const PAGE_TITLES: Record<string, string> = {
-  '/admin/dashboard': 'Overview',
-  '/admin/vendors': 'Vendor Management',
-  '/admin/orders': 'Order Monitor',
-  '/admin/drivers': 'Driver Management',
-  '/admin/referrals': 'Referrals & Credits',
-  '/admin/settings': 'Settings',
+  '/afrocart/admin/dashboard': 'Overview',
+  '/afrocart/admin/vendors':   'Vendor Management',
+  '/afrocart/admin/orders':    'Order Monitor',
+  '/afrocart/admin/drivers':   'Driver Management',
+  '/afrocart/admin/referrals': 'Referrals & Credits',
+  '/afrocart/admin/settings':  'Settings',
 }
 
 export function AdminTopbar() {
   const pathname = usePathname()
-  const { user, logout } = useAuth()
-  const router = useRouter()
+  const dispatch = useDispatch<AppDispatch>()
+  const router   = useRouter()
+  const { user } = useAuth()
   const [dropdownOpen, setDropdownOpen] = useState(false)
+
   const title = PAGE_TITLES[pathname] ?? 'Admin'
 
   function handleLogout() {
-    logout()
+    dispatch(logout())
     router.push('/login')
   }
 

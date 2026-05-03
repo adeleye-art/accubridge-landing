@@ -7,8 +7,16 @@ import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/Button'
 import { useVerifyOtpMutation } from '@/store/api/authApi'
 import { useAuth } from '@/hooks/useAuth'
-import { ROLE_REDIRECTS } from '@/lib/constants'
+import { useRole } from '@/hooks/useRole'
 import { cn } from '@/lib/utils'
+import type { AfroCartRole } from '@/types/swidex'
+
+const ROLE_REDIRECTS: Record<AfroCartRole, string> = {
+  admin:    '/afrocart/admin/dashboard',
+  vendor:   '/afrocart/vendor/dashboard',
+  driver:   '/afrocart/driver/dashboard',
+  customer: '/afrocart/customer/home',
+}
 
 interface OtpFormProps {
   phone: string
@@ -17,6 +25,7 @@ interface OtpFormProps {
 export function OtpForm({ phone }: OtpFormProps) {
   const router = useRouter()
   const { user } = useAuth()
+  const { afrocartRole } = useRole()
   const [verifyOtp, { isLoading }] = useVerifyOtpMutation()
   const [digits, setDigits] = useState(['', '', '', '', '', ''])
   const [countdown, setCountdown] = useState(60)
@@ -37,7 +46,7 @@ export function OtpForm({ phone }: OtpFormProps) {
       try {
         await verifyOtp({ phone, code }).unwrap()
         toast.success('Phone number verified!')
-        router.push(user ? ROLE_REDIRECTS[user.role] : '/login')
+        router.push(afrocartRole ? ROLE_REDIRECTS[afrocartRole] : '/portal')
       } catch {
         toast.error('Invalid code. Please try again.')
         setDigits(['', '', '', '', '', ''])

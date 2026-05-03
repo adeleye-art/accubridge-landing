@@ -1,14 +1,10 @@
 import { configureStore } from '@reduxjs/toolkit'
-import authReducer from './authSlice'
+import swidexAuthReducer from './swidexAuthSlice'
 import { baseApi } from './api/baseApi'
-import './api/authApi'
-import './api/adminApi'
-import './api/vendorApi'
-import './api/orderApi'
 
 export const store = configureStore({
   reducer: {
-    auth: authReducer,
+    swidexAuth: swidexAuthReducer,
     [baseApi.reducerPath]: baseApi.reducer,
   },
   middleware: (getDefaultMiddleware) =>

@@ -6,13 +6,13 @@ export const baseApi = createApi({
   baseQuery: fetchBaseQuery({
     baseUrl: (process.env.NEXT_PUBLIC_API_URL ?? '') + '/api',
     prepareHeaders: (headers, { getState }) => {
-      const token = (getState() as RootState).auth.token
+      const token = (getState() as RootState).swidexAuth.token
       if (token) {
         headers.set('authorization', `Bearer ${token}`)
       }
       return headers
     },
   }),
-  tagTypes: ['User', 'Vendor', 'Order', 'Driver', 'Referral', 'Stats', 'Credits'],
+  tagTypes: ['User', 'Vendor', 'Order', 'Driver', 'Referral', 'Stats', 'Credits', 'Product'],
   endpoints: () => ({}),
 })

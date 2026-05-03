@@ -1,31 +1,37 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import type { Role } from '@/types'
+import type { SwidexTokenPayload, AfroCartRole } from '@/types/swidex'
 
-const ROLE_REDIRECTS: Record<Role, string> = {
-  admin: '/admin/dashboard',
-  vendor: '/vendor/dashboard',
-  driver: '/driver/dashboard',
-  customer: '/customer/home',
+// ─── AfroCart role → dashboard URL ───────────────────────────────────────────
+
+const AFROCART_DASHBOARDS: Record<AfroCartRole, string> = {
+  admin:    '/afrocart/admin/dashboard',
+  vendor:   '/afrocart/vendor/dashboard',
+  driver:   '/afrocart/driver/dashboard',
+  customer: '/afrocart/customer/home',
 }
 
-const ROLE_PREFIXES: Record<Role, string> = {
-  admin: '/admin',
-  vendor: '/vendor',
-  driver: '/driver',
-  customer: '/customer',
+const AFROCART_PREFIXES: Record<AfroCartRole, string> = {
+  admin:    '/afrocart/admin',
+  vendor:   '/afrocart/vendor',
+  driver:   '/afrocart/driver',
+  customer: '/afrocart/customer',
 }
 
-const AUTH_PATHS = ['/login', '/register', '/verify-otp']
+// ─── Route categories ─────────────────────────────────────────────────────────
 
-function decodeJwtPayload(
-  token: string
-): { id?: string; role?: Role; email?: string; approval_status?: string } | null {
+const PUBLIC_PATHS = ['/login', '/register', '/afrocart/register', '/afrocart/verify-otp']
+const PORTAL_PATHS = ['/portal']
+const AFROCART_PREFIX = '/afrocart'
+const VERIFYBRIGE_PREFIX = '/accubridge'
+
+// ─── JWT decode ───────────────────────────────────────────────────────────────
+
+function decodeSwidexToken(token: string): SwidexTokenPayload | null {
   try {
     const parts = token.split('.')
     if (parts.length !== 3) return null
-    const payload = parts[1]
-    const padded = payload + '='.repeat((4 - (payload.length % 4)) % 4)
+    const padded = parts[1] + '='.repeat((4 - (parts[1].length % 4)) % 4)
     const decoded = Buffer.from(padded.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString()
     return JSON.parse(decoded)
   } catch {
@@ -33,75 +39,92 @@ function decodeJwtPayload(
   }
 }
 
+// ─── Middleware ───────────────────────────────────────────────────────────────
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
-  const token = request.cookies.get('afrocart_token')?.value
+  const token = request.cookies.get('swidex_token')?.value
 
-  if (AUTH_PATHS.some((p) => pathname.startsWith(p))) {
-    if (token) {
-      const payload = decodeJwtPayload(token)
-      if (payload?.role) {
-        return NextResponse.redirect(
-          new URL(ROLE_REDIRECTS[payload.role] ?? '/login', request.url)
-        )
-      }
+  // 1. Public paths — no auth needed; bounce logged-in users to portal
+  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
+    if (token && decodeSwidexToken(token)) {
+      return NextResponse.redirect(new URL('/portal', request.url))
     }
     return NextResponse.next()
   }
 
+  // 2. Root → portal
   if (pathname === '/') {
-    if (!token) return NextResponse.redirect(new URL('/login', request.url))
-    const payload = decodeJwtPayload(token)
-    if (payload?.role) {
-      return NextResponse.redirect(
-        new URL(ROLE_REDIRECTS[payload.role] ?? '/login', request.url)
-      )
-    }
-    return NextResponse.redirect(new URL('/login', request.url))
+    return token
+      ? NextResponse.redirect(new URL('/portal', request.url))
+      : NextResponse.redirect(new URL('/login', request.url))
   }
 
-  if (!token) {
+  // For all protected routes, require a valid swidex_token
+  const payload = token ? decodeSwidexToken(token) : null
+
+  if (!payload) {
     const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('from', pathname)
     return NextResponse.redirect(loginUrl)
   }
 
-  const payload = decodeJwtPayload(token)
-  if (!payload?.role) {
-    return NextResponse.redirect(new URL('/login', request.url))
+  // 3. Portal — any authenticated user can access
+  if (PORTAL_PATHS.some((p) => pathname.startsWith(p))) {
+    return NextResponse.next()
   }
 
-  const userRole = payload.role
-  const allowedPrefix = ROLE_PREFIXES[userRole]
+  // 4. AfroCart routes — require afrocart app access
+  if (pathname.startsWith(AFROCART_PREFIX)) {
+    const afroAccess = payload.apps?.afrocart
 
-  const isRoleMismatch = (Object.entries(ROLE_PREFIXES) as [Role, string][]).some(
-    ([role, prefix]) => pathname.startsWith(prefix) && role !== userRole
-  )
+    // No AfroCart role → send to onboarding
+    if (!afroAccess) {
+      if (pathname === '/afrocart/onboard') return NextResponse.next()
+      return NextResponse.redirect(new URL('/afrocart/onboard', request.url))
+    }
 
-  if (isRoleMismatch) {
-    return NextResponse.redirect(new URL(ROLE_REDIRECTS[userRole], request.url))
+    const role = afroAccess.role
+
+    // Driver approval gate
+    if (role === 'driver') {
+      const status = afroAccess.approval_status
+      const isPending = !status || status === 'pending' || status === 'rejected'
+      if (isPending && pathname !== '/afrocart/driver/pending') {
+        return NextResponse.redirect(new URL('/afrocart/driver/pending', request.url))
+      }
+      if (status === 'approved' && pathname === '/afrocart/driver/pending') {
+        return NextResponse.redirect(new URL('/afrocart/driver/dashboard', request.url))
+      }
+    }
+
+    // Role mismatch guard (e.g. vendor trying to access /afrocart/admin/...)
+    const isRoleMismatch = (Object.entries(AFROCART_PREFIXES) as [AfroCartRole, string][]).some(
+      ([r, prefix]) => pathname.startsWith(prefix) && r !== role
+    )
+    if (isRoleMismatch) {
+      return NextResponse.redirect(new URL(AFROCART_DASHBOARDS[role], request.url))
+    }
+
+    return NextResponse.next()
   }
 
-  // Driver approval gate
-  if (userRole === 'driver') {
-    const approvalStatus =
-      payload.approval_status ?? request.cookies.get('driver_approval_status')?.value
+  // 5. VerifyBridge routes — require verifybrige app access
+  if (pathname.startsWith(VERIFYBRIGE_PREFIX)) {
+    const vbAccess = payload.apps?.verifybrige
 
-    const isPendingOrRejected =
-      !approvalStatus || approvalStatus === 'pending' || approvalStatus === 'rejected'
-
-    if (isPendingOrRejected && pathname !== '/driver/pending') {
-      return NextResponse.redirect(new URL('/driver/pending', request.url))
+    // No VB role → auto-enroll as client (handled client-side on the entry page)
+    if (!vbAccess) {
+      if (pathname === '/accubridge/enroll') return NextResponse.next()
+      return NextResponse.redirect(new URL('/accubridge/enroll', request.url))
     }
 
-    if (approvalStatus === 'approved' && pathname === '/driver/pending') {
-      return NextResponse.redirect(new URL('/driver/dashboard', request.url))
-    }
+    return NextResponse.next()
   }
 
   return NextResponse.next()
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|api).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api|.*\\..*).*)'],
 }

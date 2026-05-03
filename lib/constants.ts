@@ -4,23 +4,23 @@ export const ROUTES = {
   home: '/',
   login: '/login',
   register: '/register',
-  verifyOtp: '/verify-otp',
-  adminDashboard: '/admin/dashboard',
-  adminVendors: '/admin/vendors',
-  adminOrders: '/admin/orders',
-  adminDrivers: '/admin/drivers',
-  adminReferrals: '/admin/referrals',
-  adminSettings: '/admin/settings',
-  vendorDashboard: '/vendor/dashboard',
-  driverDashboard: '/driver/dashboard',
-  customerHome: '/customer/home',
+  verifyOtp: '/afrocart/verify-otp',
+  adminDashboard: '/afrocart/admin/dashboard',
+  adminVendors: '/afrocart/admin/vendors',
+  adminOrders: '/afrocart/admin/orders',
+  adminDrivers: '/afrocart/admin/drivers',
+  adminReferrals: '/afrocart/admin/referrals',
+  adminSettings: '/afrocart/admin/settings',
+  vendorDashboard: '/afrocart/vendor/dashboard',
+  driverDashboard: '/afrocart/driver/dashboard',
+  customerHome: '/afrocart/customer/home',
 } as const
 
 export const ROLE_REDIRECTS: Record<Role, string> = {
-  admin: '/admin/dashboard',
-  vendor: '/vendor/dashboard',
-  driver: '/driver/dashboard',
-  customer: '/customer/home',
+  admin: '/afrocart/admin/dashboard',
+  vendor: '/afrocart/vendor/dashboard',
+  driver: '/afrocart/driver/dashboard',
+  customer: '/afrocart/customer/home',
 }
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
@@ -33,15 +33,15 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   cancelled: 'Cancelled',
 }
 
-export const COOKIE_NAME = 'afrocart_token'
-export const STORAGE_KEY = 'afrocart_auth'
+export const COOKIE_NAME = 'swidex_token'
+export const STORAGE_KEY = 'swidex_auth'
 
 export const ADMIN_NAV_ITEMS = [
-  { label: 'Overview', href: '/admin/dashboard', icon: 'LayoutDashboard' },
-  { label: 'Vendor Management', href: '/admin/vendors', icon: 'Store' },
-  { label: 'Order Monitor', href: '/admin/orders', icon: 'ShoppingBag' },
-  { label: 'Driver Management', href: '/admin/drivers', icon: 'Truck' },
-  { label: 'Referrals & Credits', href: '/admin/referrals', icon: 'Gift' },
-  { label: 'Commissions', href: '/admin/settings', icon: 'Percent' },
-  { label: 'Settings', href: '/admin/settings', icon: 'Settings' },
+  { label: 'Overview', href: '/afrocart/admin/dashboard', icon: 'LayoutDashboard' },
+  { label: 'Vendor Management', href: '/afrocart/admin/vendors', icon: 'Store' },
+  { label: 'Order Monitor', href: '/afrocart/admin/orders', icon: 'ShoppingBag' },
+  { label: 'Driver Management', href: '/afrocart/admin/drivers', icon: 'Truck' },
+  { label: 'Referrals & Credits', href: '/afrocart/admin/referrals', icon: 'Gift' },
+  { label: 'Commissions', href: '/afrocart/admin/settings', icon: 'Percent' },
+  { label: 'Settings', href: '/afrocart/admin/settings', icon: 'Settings' },
 ] as const

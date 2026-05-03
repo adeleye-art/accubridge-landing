@@ -9,8 +9,13 @@ import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { OrderDetailPanel } from './OrderDetailPanel'
 import { formatCurrency, formatDateTime, truncate } from '@/lib/utils'
-import { useAssignDriverMutation, useRefundOrderMutation, useGetDriversQuery } from '@/store/api/adminApi'
 import type { Order } from '@/types'
+
+const MOCK_ONLINE_DRIVERS = [
+  { id: 'd1', name: 'Kofi Mensah',  active_deliveries: 2 },
+  { id: 'd2', name: 'Ade Bello',    active_deliveries: 1 },
+  { id: 'd8', name: 'Grace Osei',   active_deliveries: 1 },
+]
 
 interface OrdersTableProps {
   orders: Order[]
@@ -21,9 +26,8 @@ export function OrdersTable({ orders, loading }: OrdersTableProps) {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [assignTarget, setAssignTarget] = useState<Order | null>(null)
   const [selectedDriverId, setSelectedDriverId] = useState('')
-  const [assignDriver, { isLoading: assigning }] = useAssignDriverMutation()
-  const [refund] = useRefundOrderMutation()
-  const { data: drivers } = useGetDriversQuery({ approval_status: 'approved' })
+  const [assigning, setAssigning] = useState(false)
+  const drivers = MOCK_ONLINE_DRIVERS
 
   type OrderRow = Record<string, unknown> & Order
 
@@ -86,10 +90,7 @@ export function OrdersTable({ orders, loading }: OrdersTableProps) {
             size="sm"
             variant="ghost"
             className="h-7 w-7 p-0 hover:text-danger"
-            onClick={async () => {
-              await refund(row.id).unwrap()
-              toast.success('Refunded')
-            }}
+            onClick={() => toast.success('Order refunded (mock)')}
           >
             <RotateCcw size={14} />
           </Button>
@@ -134,7 +135,7 @@ export function OrdersTable({ orders, loading }: OrdersTableProps) {
                 onChange={(e) => setSelectedDriverId(e.target.value)}
               >
                 <option value="">Choose a driver…</option>
-                {drivers?.filter((d) => d.status === 'online').map((d) => (
+                {drivers.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.name} ({d.active_deliveries} active)
                   </option>
@@ -148,7 +149,9 @@ export function OrdersTable({ orders, loading }: OrdersTableProps) {
               loading={assigning}
               disabled={!selectedDriverId}
               onClick={async () => {
-                await assignDriver({ orderId: assignTarget.id, driver_id: selectedDriverId }).unwrap()
+                setAssigning(true)
+                await new Promise((r) => setTimeout(r, 400))
+                setAssigning(false)
                 toast.success('Driver assigned')
                 setAssignTarget(null)
               }}

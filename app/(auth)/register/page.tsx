@@ -9,7 +9,7 @@ export default function RegisterPage() {
           Create your account
         </h1>
         <p className="mt-1 text-sm text-text-secondary">
-          Join the AfroCart community
+          One login. Every Swidex tool.
         </p>
       </div>
 

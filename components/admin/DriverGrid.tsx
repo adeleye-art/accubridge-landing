@@ -7,8 +7,12 @@ import { Avatar } from '@/components/ui/Avatar'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { formatCurrency } from '@/lib/utils'
-import { useAssignDriverMutation, useGetOrdersQuery } from '@/store/api/adminApi'
-import type { Driver } from '@/types'
+import type { Driver, Order } from '@/types'
+
+const MOCK_PENDING_ORDERS: Order[] = [
+  { id: 'p1', order_number: 'ORD-0042', user_id: 'u1', customer_name: 'Amara Okafor',  vendor_id: 'v1', vendor_name: "Mama's Kitchen", items: [], total_amount: 3500, delivery_fee: 350, credits_used: 0, status: 'pending', driver_name: undefined, created_at: new Date(Date.now() - 8 * 60000).toISOString() },
+  { id: 'p2', order_number: 'ORD-0043', user_id: 'u5', customer_name: 'Ngozi Iwu',     vendor_id: 'v4', vendor_name: 'Suya Spot',       items: [], total_amount: 2800, delivery_fee: 350, credits_used: 0, status: 'pending', driver_name: undefined, created_at: new Date(Date.now() - 3 * 60000).toISOString() },
+]
 
 interface DriverGridProps {
   drivers: Driver[]
@@ -16,9 +20,9 @@ interface DriverGridProps {
 }
 
 export function DriverGrid({ drivers, onDriverClick }: DriverGridProps) {
-  const [assignDriver, { isLoading }] = useAssignDriverMutation()
-  const { data: pendingOrders } = useGetOrdersQuery({ status: 'pending' })
+  const [isLoading, setIsLoading] = useState(false)
   const [assignments, setAssignments] = useState<Record<string, string>>({})
+  const pendingOrders = MOCK_PENDING_ORDERS
 
   const approvedOnlineDrivers = drivers.filter(
     (d) => d.approval_status === 'approved' && d.status === 'online'
@@ -101,11 +105,11 @@ export function DriverGrid({ drivers, onDriverClick }: DriverGridProps) {
                       loading={isLoading}
                       disabled={!assignments[order.id]}
                       onClick={async () => {
-                        await assignDriver({
-                          orderId: order.id,
-                          driver_id: assignments[order.id],
-                        }).unwrap()
+                        setIsLoading(true)
+                        await new Promise((r) => setTimeout(r, 400))
+                        setIsLoading(false)
                         toast.success('Driver assigned')
+                        setAssignments((prev) => { const n = { ...prev }; delete n[order.id]; return n })
                       }}
                     >
                       Confirm

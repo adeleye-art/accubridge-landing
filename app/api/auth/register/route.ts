@@ -1,37 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server'
-import type { Role, User } from '@/types'
-import { createMockToken } from '@/lib/mockJwt'
+import { MOCK_USERS, createMockJWT } from '../_mockDb'
+import type { SwidexUser } from '@/types/swidex'
 
-export async function POST(request: NextRequest) {
-  const body = await request.json()
-  const { name, email, phone, role } = body as { name: string; email: string; phone: string; role: Role }
+export async function POST(req: NextRequest) {
+  const { name, email, password, phone } = await req.json()
 
-  const newUser: User = {
-    id: `u_${Date.now()}`,
+  await new Promise((r) => setTimeout(r, 500))
+
+  if (!name || !email || !password) {
+    return NextResponse.json({ message: 'Name, email and password are required.' }, { status: 400 })
+  }
+
+  if (MOCK_USERS[email.toLowerCase()]) {
+    return NextResponse.json({ message: 'An account with this email already exists.' }, { status: 409 })
+  }
+
+  // Create new user with no app access — they'll onboard per app
+  const newUser: SwidexUser = {
+    id: `usr_${Date.now()}`,
     name,
-    email,
-    phone,
-    role,
-    referral_code: Math.random().toString(36).substring(2, 8).toUpperCase(),
-    credit_balance: 5,
+    email: email.toLowerCase(),
+    phone: phone ?? '',
+    apps: {},
     created_at: new Date().toISOString(),
   }
 
-  const token = createMockToken({ id: newUser.id, role: newUser.role, email: newUser.email })
+  // In production this would persist to the DB
+  MOCK_USERS[email.toLowerCase()] = { password, user: newUser }
 
-  const response = NextResponse.json({
-    user: newUser,
+  const token = createMockJWT(newUser)
+
+  return NextResponse.json({
     token,
-    message: 'Registration successful',
+    user: newUser,
+    message: 'Account created successfully',
   })
-
-  response.cookies.set('afrocart_token', token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 60 * 60 * 24 * 7,
-    path: '/',
-  })
-
-  return response
 }

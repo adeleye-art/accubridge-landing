@@ -8,10 +8,6 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { VendorDetailPanel } from './VendorDetailPanel'
 import { formatDate } from '@/lib/utils'
-import {
-  useApproveVendorMutation,
-  useRejectVendorMutation,
-} from '@/store/api/adminApi'
 import type { Vendor } from '@/types'
 
 interface VendorTableProps {
@@ -21,8 +17,8 @@ interface VendorTableProps {
 
 export function VendorTable({ vendors, loading }: VendorTableProps) {
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null)
-  const [approve, { isLoading: approvingId }] = useApproveVendorMutation()
-  const [reject, { isLoading: rejectingId }] = useRejectVendorMutation()
+  const [approvingId, setApprovingId] = useState(false)
+  const [rejectingId, setRejectingId] = useState(false)
 
   type VendorRow = Record<string, unknown> & Vendor
 
@@ -72,7 +68,9 @@ export function VendorTable({ vendors, loading }: VendorTableProps) {
                 loading={approvingId}
                 onClick={async (e) => {
                   e.stopPropagation()
-                  await approve(row.id).unwrap()
+                  setApprovingId(true)
+                  await new Promise((r) => setTimeout(r, 400))
+                  setApprovingId(false)
                   toast.success('Vendor approved')
                 }}
               >
@@ -85,7 +83,9 @@ export function VendorTable({ vendors, loading }: VendorTableProps) {
                 loading={rejectingId}
                 onClick={async (e) => {
                   e.stopPropagation()
-                  await reject(row.id).unwrap()
+                  setRejectingId(true)
+                  await new Promise((r) => setTimeout(r, 400))
+                  setRejectingId(false)
                   toast.error('Vendor rejected')
                 }}
               >

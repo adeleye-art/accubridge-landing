@@ -7,11 +7,6 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { formatDate } from '@/lib/utils'
-import {
-  useApproveVendorMutation,
-  useRejectVendorMutation,
-  useUpdateCommissionMutation,
-} from '@/store/api/adminApi'
 import type { Vendor } from '@/types'
 
 interface VendorDetailPanelProps {
@@ -21,45 +16,36 @@ interface VendorDetailPanelProps {
 
 export function VendorDetailPanel({ vendor, onClose }: VendorDetailPanelProps) {
   const [commission, setCommission] = useState('')
-  const [approve, { isLoading: approving }] = useApproveVendorMutation()
-  const [reject, { isLoading: rejecting }] = useRejectVendorMutation()
-  const [updateCommission, { isLoading: updatingCommission }] = useUpdateCommissionMutation()
+  const [approving, setApproving] = useState(false)
+  const [rejecting, setRejecting] = useState(false)
+  const [updatingCommission, setUpdatingCommission] = useState(false)
 
   if (!vendor) return null
 
   async function handleApprove() {
-    try {
-      await approve(vendor!.id).unwrap()
-      toast.success(`${vendor!.business_name} approved`)
-      onClose()
-    } catch {
-      toast.error('Failed to approve')
-    }
+    setApproving(true)
+    await new Promise((r) => setTimeout(r, 500))
+    setApproving(false)
+    toast.success(`${vendor!.business_name} approved`)
+    onClose()
   }
 
   async function handleReject() {
-    try {
-      await reject(vendor!.id).unwrap()
-      toast.success(`${vendor!.business_name} rejected`)
-      onClose()
-    } catch {
-      toast.error('Failed to reject')
-    }
+    setRejecting(true)
+    await new Promise((r) => setTimeout(r, 500))
+    setRejecting(false)
+    toast.success(`${vendor!.business_name} rejected`)
+    onClose()
   }
 
   async function handleUpdateCommission() {
     const rate = parseFloat(commission)
-    if (isNaN(rate) || rate < 0 || rate > 100) {
-      toast.error('Enter a valid rate (0–100)')
-      return
-    }
-    try {
-      await updateCommission({ id: vendor!.id, commission_rate: rate }).unwrap()
-      toast.success('Commission updated')
-      setCommission('')
-    } catch {
-      toast.error('Failed to update')
-    }
+    if (isNaN(rate) || rate < 0 || rate > 100) { toast.error('Enter a valid rate (0–100)'); return }
+    setUpdatingCommission(true)
+    await new Promise((r) => setTimeout(r, 400))
+    setUpdatingCommission(false)
+    toast.success('Commission updated')
+    setCommission('')
   }
 
   return (

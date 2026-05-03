@@ -4,10 +4,16 @@ import { X, CheckCircle2, Circle } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { formatCurrency, formatDateTime } from '@/lib/utils'
-import { useRefundOrderMutation, useAssignDriverMutation, useGetDriversQuery } from '@/store/api/adminApi'
 import { cn } from '@/lib/utils'
 import toast from 'react-hot-toast'
+import { useState } from 'react'
 import type { Order, OrderStatus } from '@/types'
+
+const MOCK_ONLINE_DRIVERS = [
+  { id: 'd1', name: 'Kofi Mensah' },
+  { id: 'd2', name: 'Ade Bello' },
+  { id: 'd8', name: 'Grace Osei' },
+]
 
 interface OrderDetailPanelProps {
   order: Order | null
@@ -35,21 +41,17 @@ function getStepState(step: OrderStatus, current: OrderStatus) {
 }
 
 export function OrderDetailPanel({ order, onClose }: OrderDetailPanelProps) {
-  const [refund, { isLoading: refunding }] = useRefundOrderMutation()
-  const [assignDriver] = useAssignDriverMutation()
-  const { data: drivers } = useGetDriversQuery({ approval_status: 'approved' })
+  const [refunding, setRefunding] = useState(false)
+  const drivers = MOCK_ONLINE_DRIVERS
 
   if (!order) return null
 
   async function handleRefund() {
-    if (!order) return
-    try {
-      await refund(order.id).unwrap()
-      toast.success('Order refunded')
-      onClose()
-    } catch {
-      toast.error('Refund failed')
-    }
+    setRefunding(true)
+    await new Promise((r) => setTimeout(r, 500))
+    setRefunding(false)
+    toast.success('Order refunded')
+    onClose()
   }
 
   return (
@@ -162,14 +164,13 @@ export function OrderDetailPanel({ order, onClose }: OrderDetailPanelProps) {
                 <select
                   className="text-xs border border-surface-dark rounded px-2 py-1 bg-white text-text-primary focus:outline-none focus:border-gold"
                   defaultValue=""
-                  onChange={async (e) => {
-                    if (!e.target.value || !order) return
-                    await assignDriver({ orderId: order.id, driver_id: e.target.value })
+                  onChange={(e) => {
+                    if (!e.target.value) return
                     toast.success('Driver assigned')
                   }}
                 >
                   <option value="">Assign driver…</option>
-                  {drivers?.filter((d) => d.status === 'online').map((d) => (
+                  {drivers.map((d) => (
                     <option key={d.id} value={d.id}>{d.name}</option>
                   ))}
                 </select>

@@ -6,12 +6,6 @@ import toast from 'react-hot-toast'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { formatDate } from '@/lib/utils'
-import {
-  useApproveDriverMutation,
-  useRejectDriverMutation,
-  useSuspendDriverMutation,
-  useVerifyDriverDocumentMutation,
-} from '@/store/api/adminApi'
 import type { Driver, VehicleType } from '@/types'
 
 interface DriverDetailPanelProps {
@@ -45,59 +39,49 @@ const DOC_LABELS: Record<string, string> = {
 export function DriverDetailPanel({ driver, onClose }: DriverDetailPanelProps) {
   const [rejectMode, setRejectMode] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
-
-  const [approve, { isLoading: approving }] = useApproveDriverMutation()
-  const [reject, { isLoading: rejecting }] = useRejectDriverMutation()
-  const [suspend, { isLoading: suspending }] = useSuspendDriverMutation()
-  const [verifyDoc, { isLoading: verifying }] = useVerifyDriverDocumentMutation()
+  const [approving, setApproving] = useState(false)
+  const [rejecting, setRejecting] = useState(false)
+  const [suspending, setSuspending] = useState(false)
+  const [verifying, setVerifying] = useState(false)
+  const [verifiedDocs, setVerifiedDocs] = useState<Set<string>>(new Set())
 
   if (!driver) return null
 
-  const allDocsVerified = driver.documents.every((d) => d.verified)
-  const canApprove = driver.documents.length > 0 && allDocsVerified
+  const allDocsVerified = driver.documents.length === 0 || driver.documents.every((d) => d.verified || verifiedDocs.has(d.type))
+  const canApprove = driver.dbs_check_acknowledged && (driver.documents.length === 0 || allDocsVerified)
 
   async function handleApprove() {
-    try {
-      await approve(driver!.id).unwrap()
-      toast.success(`${driver!.name} approved`)
-      onClose()
-    } catch {
-      toast.error('Failed to approve driver')
-    }
+    setApproving(true)
+    await new Promise((r) => setTimeout(r, 500))
+    setApproving(false)
+    toast.success(`${driver!.name} approved`)
+    onClose()
   }
 
   async function handleReject() {
-    if (!rejectReason.trim()) {
-      toast.error('Please enter a rejection reason')
-      return
-    }
-    try {
-      await reject({ id: driver!.id, reason: rejectReason }).unwrap()
-      toast.success(`${driver!.name} rejected`)
-      onClose()
-    } catch {
-      toast.error('Failed to reject driver')
-    }
+    if (!rejectReason.trim()) { toast.error('Please enter a rejection reason'); return }
+    setRejecting(true)
+    await new Promise((r) => setTimeout(r, 500))
+    setRejecting(false)
+    toast.success(`${driver!.name} rejected`)
+    onClose()
   }
 
   async function handleSuspend() {
-    try {
-      await suspend({ id: driver!.id, reason: 'Suspended by admin' }).unwrap()
-      toast.success(`${driver!.name} suspended`)
-      onClose()
-    } catch {
-      toast.error('Failed to suspend driver')
-    }
+    setSuspending(true)
+    await new Promise((r) => setTimeout(r, 500))
+    setSuspending(false)
+    toast.success(`${driver!.name} suspended`)
+    onClose()
   }
 
   async function handleVerifyDoc(docType: string, currentlyVerified: boolean) {
-    if (currentlyVerified) return
-    try {
-      await verifyDoc({ id: driver!.id, doc_type: docType }).unwrap()
-      toast.success('Document verified')
-    } catch {
-      toast.error('Failed to verify document')
-    }
+    if (currentlyVerified || verifiedDocs.has(docType)) return
+    setVerifying(true)
+    await new Promise((r) => setTimeout(r, 400))
+    setVerifying(false)
+    setVerifiedDocs((prev) => new Set([...prev, docType]))
+    toast.success('Document verified')
   }
 
   return (
@@ -180,12 +164,12 @@ export function DriverDetailPanel({ driver, onClose }: DriverDetailPanelProps) {
                     )}
                     <button
                       type="button"
-                      disabled={doc.verified || verifying}
+                      disabled={doc.verified || verifiedDocs.has(doc.type) || verifying}
                       onClick={() => handleVerifyDoc(doc.type, doc.verified)}
                       className="flex items-center gap-1 text-xs flex-shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
-                      title={doc.verified ? 'Already verified' : 'Mark as verified'}
+                      title={doc.verified || verifiedDocs.has(doc.type) ? 'Already verified' : 'Mark as verified'}
                     >
-                      {doc.verified ? (
+                      {doc.verified || verifiedDocs.has(doc.type) ? (
                         <>
                           <CheckSquare size={14} className="text-success" />
                           <span className="text-success">Verified</span>

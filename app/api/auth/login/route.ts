@@ -1,28 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { MOCK_USERS } from '@/lib/mockData'
-import { createMockToken, getRoleFromEmail } from '@/lib/mockJwt'
+import { MOCK_USERS, createMockJWT } from '../_mockDb'
 
-export async function POST(request: NextRequest) {
-  const body = await request.json()
-  const { email } = body
+export async function POST(req: NextRequest) {
+  const { email, password } = await req.json()
 
-  const role = getRoleFromEmail(email)
-  const user = MOCK_USERS.find((u) => u.role === role) ?? MOCK_USERS[0]
-  const token = createMockToken({ id: user.id, role: user.role, email: user.email })
+  // Simulate network latency
+  await new Promise((r) => setTimeout(r, 400))
 
-  const response = NextResponse.json({
-    user,
+  const record = MOCK_USERS[email?.toLowerCase()]
+
+  if (!record || record.password !== password) {
+    return NextResponse.json(
+      { message: 'Invalid email or password.' },
+      { status: 401 }
+    )
+  }
+
+  const token = createMockJWT(record.user)
+
+  return NextResponse.json({
     token,
+    user: record.user,
     message: 'Login successful',
   })
-
-  response.cookies.set('afrocart_token', token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 60 * 60 * 24 * 7,
-    path: '/',
-  })
-
-  return response
 }
