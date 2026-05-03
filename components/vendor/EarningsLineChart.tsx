@@ -2,17 +2,12 @@
 
 import {
   ResponsiveContainer,
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   Area,
   AreaChart,
-  defs,
-  linearGradient,
-  stop,
 } from 'recharts'
 import { format, parseISO } from 'date-fns'
 

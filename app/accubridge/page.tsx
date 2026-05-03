@@ -1,18 +1,26 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useRole } from '@/hooks/useRole'
 
 export default function AccuBridgeEntryPage() {
   const router = useRouter()
   const { verifybrigeRole } = useRole()
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (!mounted) return
     if (verifybrigeRole === 'admin') router.replace('/accubridge/admin/dashboard')
     else if (verifybrigeRole === 'staff') router.replace('/accubridge/staff/dashboard')
     else router.replace('/accubridge/client/dashboard')
-  }, [verifybrigeRole, router])
+  }, [verifybrigeRole, router, mounted])
+
+  if (!mounted) return null
 
   return (
     <div className="flex items-center justify-center min-h-screen"

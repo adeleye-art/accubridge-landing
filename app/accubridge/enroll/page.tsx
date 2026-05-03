@@ -13,9 +13,12 @@ export default function VerifyBridgeEnrollPage() {
   const dispatch = useDispatch<AppDispatch>()
   const { user } = useAuth()
   const [status, setStatus] = useState<'enrolling' | 'done' | 'error'>('enrolling')
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => { setMounted(true) }, [])
 
   useEffect(() => {
-    if (!user) return
+    if (!mounted || !user) return
 
     // If already has VB access, just redirect
     if (user.apps?.verifybrige) {
@@ -49,6 +52,8 @@ export default function VerifyBridgeEnrollPage() {
 
     enroll()
   }, [user, router, dispatch])
+
+  if (!mounted) return null
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center"

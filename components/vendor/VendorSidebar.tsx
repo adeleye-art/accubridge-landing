@@ -85,7 +85,7 @@ export function VendorSidebar({ store, incomingOrders, isOpen, onStoreToggle }: 
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon
           const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
-          const badge = item.hasbadge && incomingCount > 0 ? incomingCount : 0
+          const badge = item.hasBadge && incomingCount > 0 ? incomingCount : 0
 
           return (
             <Link
