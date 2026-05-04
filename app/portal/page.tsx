@@ -50,21 +50,8 @@ const QUICK_STATS = [
   { label: 'Funding Applications',   count: 1,  icon: Briefcase,       accent: '#8B5CF6' },
 ]
 
-const SIDEBAR_NAV = [
-  { label: 'Dashboard', href: '/portal',           icon: LayoutDashboard },
-  { label: 'Accounting', href: '/accubridge/enroll', icon: BookOpen },
-  { label: 'Payroll',    href: '/portal',           icon: Users },
-  { label: 'VAT / Tax',  href: '/portal',           icon: Receipt },
-  { label: 'AfroCart',   href: '/afrocart/onboard', icon: ShoppingBasket },
-]
-
-const TOP_NAV = [
-  { label: 'Dashboard',      href: '/portal' },
-  { label: 'Business Tools', href: '/portal' },
-  { label: 'Marketplace',    href: '/afrocart/onboard' },
-  { label: 'Payments',       href: '/portal' },
-  { label: 'Funding Access', href: '/portal' },
-]
+// SIDEBAR_NAV and TOP_NAV are built dynamically inside the component
+// so AfroCart links point to the user's actual dashboard when enrolled.
 
 export default function PortalPage() {
   const dispatch = useDispatch<AppDispatch>()
@@ -78,6 +65,22 @@ export default function PortalPage() {
 
   const afroHref = afrocartRole ? AFROCART_DASHBOARDS[afrocartRole] : '/afrocart/onboard'
   const vbHref   = verifybrigeRole ? VB_DASHBOARDS[verifybrigeRole] : '/accubridge/enroll'
+
+  const SIDEBAR_NAV = [
+    { label: 'Dashboard',  href: '/portal',      icon: LayoutDashboard },
+    { label: 'Accounting', href: vbHref,          icon: BookOpen        },
+    { label: 'Payroll',    href: '/portal',       icon: Users           },
+    { label: 'VAT / Tax',  href: '/portal',       icon: Receipt         },
+    { label: 'AfroCart',   href: afroHref,        icon: ShoppingBasket  },
+  ]
+
+  const TOP_NAV = [
+    { label: 'Dashboard',      href: '/portal'  },
+    { label: 'Business Tools', href: vbHref     },
+    { label: 'Marketplace',    href: afroHref   },
+    { label: 'Payments',       href: '/portal'  },
+    { label: 'Funding Access', href: '/portal'  },
+  ]
 
   const APP_CARDS = [
     {

@@ -1,7 +1,5 @@
 'use client'
 
-import { Provider } from 'react-redux'
-import { store } from '@/store/accubridge'
 import { PermissionProvider } from '@/lib/accubridge/auth/permission-context'
 import { useEffect, useState } from 'react'
 import type { UserRole } from '@/types/accubridge/auth'
@@ -52,12 +50,13 @@ function PermissionWrapper({ children }: { children: React.ReactNode }) {
   )
 }
 
+// No separate <Provider> — the root ReduxProvider in app/layout.tsx already
+// covers all routes including /accubridge/*. A second Provider with a
+// different store would shadow it and break useAuth / useSelector(swidexAuth).
 export function AccuBridgeProvider({ children }: { children: React.ReactNode }) {
   return (
-    <Provider store={store}>
-      <PermissionWrapper>
-        {children}
-      </PermissionWrapper>
-    </Provider>
+    <PermissionWrapper>
+      {children}
+    </PermissionWrapper>
   )
 }

@@ -29,7 +29,7 @@ const ROLES: {
   {
     role: 'vendor',
     label: 'Vendor',
-    description: 'List your restaurant or store, manage products, and fulfil orders.',
+    description: 'List your restaurant or store, manage products, and fulfil orders. Subject to approval after sign-up.',
     icon: Store,
     color: '#E8732A',
     bg: 'bg-orange-50 border-orange-200 hover:border-orange-400',
@@ -67,14 +67,18 @@ export default function AfroCartOnboardPage() {
       dispatch(updateUser({ user: data.user, token: data.token }))
       toast.success(`You're set up as a ${selected}!`)
 
-      // Route to the right dashboard
+      // Route to the right dashboard.
+      // Use window.location.href (full navigation) so the browser sends the
+      // freshly-written swidex_token cookie to the server, letting the
+      // middleware see the new role. router.push() does a soft navigation
+      // that can use a prefetch cache built before the cookie was updated.
       const dashboards: Record<AfroCartRole, string> = {
         admin:    '/afrocart/admin/dashboard',
-        vendor:   '/afrocart/vendor/dashboard',
+        vendor:   '/afrocart/vendor/register',
         driver:   '/afrocart/driver/pending',
         customer: '/afrocart/customer/home',
       }
-      router.push(dashboards[selected])
+      window.location.href = dashboards[selected]
     } catch (e: unknown) {
       toast.error((e as Error).message ?? 'Something went wrong.')
     } finally {
@@ -125,7 +129,7 @@ export default function AfroCartOnboardPage() {
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <p className="font-semibold text-text-primary text-sm">{label}</p>
-                    {role === 'driver' && (
+                    {(role === 'driver' || role === 'vendor') && (
                       <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
                         Requires approval
                       </span>

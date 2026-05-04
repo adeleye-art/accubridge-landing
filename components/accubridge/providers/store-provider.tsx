@@ -1,8 +1,7 @@
 "use client";
 
-import { Provider } from "react-redux";
-import { store } from "@/store/accubridge";
-
+// This file is kept for backwards compatibility but is no longer used.
+// The root ReduxProvider in app/layout.tsx covers all routes.
 export function StoreProvider({ children }: { children: React.ReactNode }) {
-  return <Provider store={store}>{children}</Provider>;
+  return <>{children}</>;
 }

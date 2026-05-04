@@ -86,6 +86,19 @@ export function middleware(request: NextRequest) {
 
     const role = afroAccess.role
 
+    // Vendor approval gate
+    if (role === 'vendor') {
+      const status = afroAccess.approval_status
+      const VENDOR_PRE_APPROVAL_PATHS = ['/afrocart/vendor/pending', '/afrocart/vendor/register']
+      const isPending = !status || status === 'pending' || status === 'rejected'
+      if (isPending && !VENDOR_PRE_APPROVAL_PATHS.includes(pathname)) {
+        return NextResponse.redirect(new URL('/afrocart/vendor/pending', request.url))
+      }
+      if (status === 'approved' && VENDOR_PRE_APPROVAL_PATHS.includes(pathname)) {
+        return NextResponse.redirect(new URL('/afrocart/vendor/dashboard', request.url))
+      }
+    }
+
     // Driver approval gate
     if (role === 'driver') {
       const status = afroAccess.approval_status
