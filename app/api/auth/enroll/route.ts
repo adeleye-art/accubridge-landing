@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
       afrocart: {
         role: afroRole,
         permissions: getAfroCartPermissions(afroRole),
-        approval_status: afroRole === 'driver' ? 'pending' : 'approved',
+        approval_status: (afroRole === 'driver' || afroRole === 'vendor') ? 'pending' : 'approved',
       },
     }
   } else if (app === 'verifybrige') {

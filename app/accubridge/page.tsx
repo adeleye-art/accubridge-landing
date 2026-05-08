@@ -15,9 +15,12 @@ export default function AccuBridgeEntryPage() {
 
   useEffect(() => {
     if (!mounted) return
+    // Only redirect when a role is definitively known — middleware handles
+    // users with no role (sends to /accubridge/enroll → onboarding)
     if (verifybrigeRole === 'admin') router.replace('/accubridge/admin/dashboard')
     else if (verifybrigeRole === 'staff') router.replace('/accubridge/staff/dashboard')
-    else router.replace('/accubridge/client/dashboard')
+    else if (verifybrigeRole === 'client') router.replace('/accubridge/client/dashboard')
+    // verifybrigeRole === undefined/null → do nothing, let middleware handle routing
   }, [verifybrigeRole, router, mounted])
 
   if (!mounted) return null

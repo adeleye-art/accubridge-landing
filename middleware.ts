@@ -102,11 +102,12 @@ export function middleware(request: NextRequest) {
     // Driver approval gate
     if (role === 'driver') {
       const status = afroAccess.approval_status
+      const DRIVER_PRE_APPROVAL_PATHS = ['/afrocart/driver/pending', '/afrocart/driver/register']
       const isPending = !status || status === 'pending' || status === 'rejected'
-      if (isPending && pathname !== '/afrocart/driver/pending') {
+      if (isPending && !DRIVER_PRE_APPROVAL_PATHS.some(p => pathname.startsWith(p))) {
         return NextResponse.redirect(new URL('/afrocart/driver/pending', request.url))
       }
-      if (status === 'approved' && pathname === '/afrocart/driver/pending') {
+      if (status === 'approved' && DRIVER_PRE_APPROVAL_PATHS.some(p => pathname.startsWith(p))) {
         return NextResponse.redirect(new URL('/afrocart/driver/dashboard', request.url))
       }
     }
@@ -126,10 +127,21 @@ export function middleware(request: NextRequest) {
   if (pathname.startsWith(VERIFYBRIGE_PREFIX)) {
     const vbAccess = payload.apps?.verifybrige
 
-    // No VB role → auto-enroll as client (handled client-side on the entry page)
+    // No VB role → enroll page handles auto-enrollment then sends to onboarding
     if (!vbAccess) {
       if (pathname === '/accubridge/enroll') return NextResponse.next()
       return NextResponse.redirect(new URL('/accubridge/enroll', request.url))
+    }
+
+    const vbRole = vbAccess.role
+
+    // Client role: enforce onboarding before allowing dashboard access
+    // Admin and Staff are provisioned by backend — they skip onboarding entirely
+    if (vbRole === 'client') {
+      const onboardingDone = request.cookies.get('accubridge_onboarding_done')?.value
+      if (!onboardingDone && !pathname.startsWith('/accubridge/onboarding')) {
+        return NextResponse.redirect(new URL('/accubridge/onboarding', request.url))
+      }
     }
 
     return NextResponse.next()

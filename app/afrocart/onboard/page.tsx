@@ -75,7 +75,7 @@ export default function AfroCartOnboardPage() {
       const dashboards: Record<AfroCartRole, string> = {
         admin:    '/afrocart/admin/dashboard',
         vendor:   '/afrocart/vendor/register',
-        driver:   '/afrocart/driver/pending',
+        driver:   '/afrocart/driver/register',
         customer: '/afrocart/customer/home',
       }
       window.location.href = dashboards[selected]
